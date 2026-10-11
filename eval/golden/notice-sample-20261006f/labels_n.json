@@ -1,0 +1,1145 @@
+{
+ "status": "draft",
+ "labelled_on": "2026-10-11",
+ "note": "판정기 홀드 여부를 정하기 전 일반화 확인용 미사용 공고 12건(random_pick_n.json). 엔진을 돌리기 전에 공고문 참가자격 절만 읽고 쓴 초안(사용자 검수 전).",
+ "policy": {
+  "core": "회사 프로필로 판정하는 참가자격 요건. 유형과 값이 모두 맞아야 찾은 것으로 본다. values 가 여럿이면 대안(하나만 갖추면 됨)이다.",
+  "confirm": "공동수급 불허·단독 이행처럼 충족/미충족으로 단정하면 안 되는 조건. 조항을 찾아 '확인 필요'로 남겼으면 맞다.",
+  "excluded.common": "나라장터 참가등록, 부정당업자 제재·조세포탈 해당 없음 등 거의 모든 공고에 있는 항목. 채점하지 않는다.",
+  "excluded.conditional": "'적용되는 경우' 처럼 조건이 붙은 문장. 채점하지 않는다.",
+  "excluded.subjective": "'이행할 수 있는 업체' 처럼 프로필로 판정할 수 없는 서술. 요건으로 뽑으면 오답이다.",
+  "excluded.not_requirement": "요건이 아닌 안내 문장. 요건으로 뽑으면 오답이다.",
+  "excluded.product": "납품 물품에 대한 조건. 회사 자격으로 뽑으면 오답이다.",
+  "core.exclusion": "exclusion=true 인 core 는 배제 조건이다. 배제로 담겨야(scope.restriction=EXCLUDE) 찾은 것이고, 같은 값을 요구로 확정하면 뜻이 뒤집힌 확정(inverted)이다.",
+  "excluded.detail": "core 요건에 딸린 세부(실적의 인정 분야 등). 따로 요건으로 나와도 오답으로 세지 않는다.",
+  "excluded.evaluation": "평가·심사의 배점 항목. 참가 자격이 아니다. 요건으로 뽑으면 오답이다.",
+  "ideal_profile": "그 공고의 참가 자격을 모두 갖춘 가상 회사. 이 회사에 '미달' 이 하나라도 나오면 틀린 미달이다.",
+  "checklist": "확인할 항목 또는 요건으로 정리하지 못한 조항으로 나와야 하는 문구.",
+  "notes": "참고 정보(공동수급·하도급 허용 여부 등)로 나와야 하는 문구.",
+  "expect": "가상 회사 판정의 기대값이 '핵심 자격 충족' 이 아닌 공고만 적는다."
+ },
+ "notices": {
+  "R26BK01726012-000": {
+   "title": "(선박) 26년 단속전담함정 2척 건조",
+   "core": [
+    {
+     "id": "N1a",
+     "type": "REGISTRATION_CERTIFICATION",
+     "values": [
+      "2511200901"
+     ],
+     "source": "어업지도선(2511200901)를 제조 물품으로 입찰참가 등록"
+    },
+    {
+     "id": "N1b",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "중소기업"
+     ],
+     "source": "중소기업자 또는 소상공인 — 확인서"
+    }
+   ],
+   "confirm": [
+    {
+     "id": "N1c",
+     "phrase": "직접생산확인증명서"
+    }
+   ],
+   "checklist": [],
+   "notes": [
+    "공동이행방식"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "적격조합"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "특별법인"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-726012",
+    "region_name": "부산광역시 영도구",
+    "company_size": "MEDIUM",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [
+     {
+      "ref": "c1",
+      "name": "어업지도선 제조물품 등록",
+      "certification_code": "2511200901",
+      "issuer_name": null,
+      "issued_at": "2026-01-02",
+      "expires_at": "2028-12-31"
+     }
+    ],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01746227-000": {
+   "title": "모듈형 재배장치(수경재배장치) 구매",
+   "core": [
+    {
+     "id": "N2a",
+     "type": "REGISTRATION_CERTIFICATION",
+     "values": [
+      "2110239901"
+     ],
+     "source": "② G2B세부품명번호 2110239901(수경재배장치)를 제조 또는 공급 물품으로 등록"
+    },
+    {
+     "id": "N2b",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "소기업"
+     ],
+     "source": "소기업 또는 소상공인 — 확인서",
+     "names": [
+      "소상공인"
+     ]
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [
+    "공동계약 불허"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "특별법인"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "직접생산확인증명서를 요구하는 경우"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-746227",
+    "region_name": "전라남도 무안군",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [
+     {
+      "ref": "c1",
+      "name": "수경재배장치 물품 등록",
+      "certification_code": "2110239901",
+      "issuer_name": null,
+      "issued_at": "2026-01-02",
+      "expires_at": "2028-12-31"
+     }
+    ],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01747471-000": {
+   "title": "전북 스마트팜 혁신밸리 청년농 성장정착모델 구축 연구용역",
+   "core": [
+    {
+     "id": "N3a",
+     "type": "INDUSTRY",
+     "values": [
+      "1169"
+     ],
+     "source": "3-1-1 학술.연구용역(업종코드:1169)"
+    },
+    {
+     "id": "N3b",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "소기업"
+     ],
+     "source": "소기업 또는 소상공인 — 확인서",
+     "names": [
+      "소상공인"
+     ]
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [
+    "공동수급 및 하도급은 불가"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "비영리법인"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-747471",
+    "region_name": "전북특별자치도 전주시",
+    "company_size": "SMALL",
+    "industries": [
+     {
+      "code": "1169",
+      "name": "학술.연구용역",
+      "verified": true
+     }
+    ],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01747743-000": {
+   "title": "포천시 생활자원회수센터 현대화사업 전기공사",
+   "core": [
+    {
+     "id": "N4a",
+     "type": "INDUSTRY",
+     "values": [
+      "0037"
+     ],
+     "source": "전기공사업(업종코드 0037) 등록"
+    },
+    {
+     "id": "N4b",
+     "type": "REGION",
+     "values": [
+      "경기도"
+     ],
+     "source": "본점 소재지가 경기도 내"
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [
+    "공동계약에 관한 사항: 불허"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "evaluation",
+     "phrase": "시공경험"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-747743",
+    "region_name": "경기도 포천시",
+    "company_size": "SMALL",
+    "industries": [
+     {
+      "code": "0037",
+      "name": "전기공사업",
+      "verified": true
+     }
+    ],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748016-000": {
+   "title": "국가어업지도선(무궁화25호) 정기수리용역(선체·기관)",
+   "core": [
+    {
+     "id": "N5a",
+     "type": "INDUSTRY",
+     "values": [
+      "5958"
+     ],
+     "source": "나. 항만운송관련사업[선박수리업(업종코드: 5958)]"
+    },
+    {
+     "id": "N5b",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "중소기업"
+     ],
+     "source": "중소기업자 또는 소상공인 — 확인서"
+    }
+   ],
+   "confirm": [
+    {
+     "id": "N5c",
+     "phrase": "공장등록증"
+    }
+   ],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748016",
+    "region_name": "부산광역시 영도구",
+    "company_size": "SMALL",
+    "industries": [
+     {
+      "code": "5958",
+      "name": "항만운송관련사업(선박수리업)",
+      "verified": true
+     }
+    ],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748746-000": {
+   "title": "동남권 LNG벙커링 사업 자문 및 컨설팅 용역",
+   "core": [
+    {
+     "id": "N6a",
+     "type": "INDUSTRY",
+     "values": [
+      "1200"
+     ],
+     "source": "6) 재무자문: 회계법인(업종코드 : 1200) — 분야별(분담이행 공동수급)"
+    },
+    {
+     "id": "N6b",
+     "type": "INDUSTRY",
+     "values": [
+      "1169"
+     ],
+     "source": "6) 인수자문: 학술연구용역업(업종코드 : 1169)"
+    },
+    {
+     "id": "N6c",
+     "type": "INDUSTRY",
+     "values": [
+      "2305",
+      "2307"
+     ],
+     "source": "6) 법률자문: 법무법인(2305) 또는 법무법인(유한)(2307) — 대안"
+    },
+    {
+     "id": "N6d",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "중소기업"
+     ],
+     "source": "5) 중기업, 소기업 및 소상공인 — 확인서"
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [
+    "공동계약(분담이행방식, 3인 이하)"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "비영리법인"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "특별법인"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748746",
+    "region_name": "부산광역시 남구",
+    "company_size": "SMALL",
+    "industries": [
+     {
+      "code": "1200",
+      "name": "회계법인",
+      "verified": true
+     },
+     {
+      "code": "1169",
+      "name": "학술.연구용역",
+      "verified": true
+     },
+     {
+      "code": "2305",
+      "name": "법무법인",
+      "verified": true
+     }
+    ],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748796-000": {
+   "title": "해외 변전소급 ESS 주요설비 운영안정화 및 하자보증 기술지원 용역",
+   "core": [],
+   "confirm": [],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748796",
+    "region_name": "서울특별시 강남구",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748909-000": {
+   "title": "의약품 단가 계약(2그룹)",
+   "core": [
+    {
+     "id": "N8a",
+     "type": "INDUSTRY",
+     "values": [
+      "5307"
+     ],
+     "source": "나. 의약품판매업(의약품도매상)(업종코드: 5307)"
+    },
+    {
+     "id": "N8b",
+     "type": "REGION",
+     "values": [
+      "서울"
+     ],
+     "source": "다. 본점소재지를 서울특별시에 둔 자"
+    },
+    {
+     "id": "N8c",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "중소기업"
+     ],
+     "source": "마. 중소기업자 — 중소기업확인서"
+    }
+   ],
+   "confirm": [
+    {
+     "id": "N8d",
+     "phrase": "적격업소"
+    }
+   ],
+   "checklist": [],
+   "notes": [
+    "단독이행만 허용"
+   ],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "특별법인"
+    },
+    {
+     "reason": "conditional",
+     "phrase": "적격조합"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748909",
+    "region_name": "서울특별시 중구",
+    "company_size": "SMALL",
+    "industries": [
+     {
+      "code": "5307",
+      "name": "의약품판매업(의약품도매상)",
+      "verified": true
+     }
+    ],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748911-000": {
+   "title": "로켓추진기관 점화 통제시스템 보강",
+   "core": [
+    {
+     "id": "N9a",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "중소기업"
+     ],
+     "source": "중소기업자 또는 소상공인 — 확인서"
+    },
+    {
+     "id": "N9b",
+     "type": "COMPANY_SIZE",
+     "values": [
+      "대기업"
+     ],
+     "source": "바. 대기업 및 중견기업 소프트웨어 사업자 참여 불가 (+ 상호출자제한기업)",
+     "names": [
+      "중견기업"
+     ],
+     "exclusion": true
+    }
+   ],
+   "confirm": [
+    {
+     "id": "N9c",
+     "phrase": "제작 기술을 보유"
+    }
+   ],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748911",
+    "region_name": "대전광역시 유성구",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01748986-000": {
+   "title": "한국파스퇴르연구소 생물안전 2·3등급시설 내 생물안전작업대 HEPA 필터 교체 용역",
+   "core": [],
+   "confirm": [
+    {
+     "id": "N10a",
+     "phrase": "수행경력 5건"
+    }
+   ],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "subjective",
+     "phrase": "장비 및 인력을 보유"
+    },
+    {
+     "reason": "subjective",
+     "phrase": "감독자의 지시"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748986",
+    "region_name": "경기도 성남시",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   },
+   "expect": "insufficient_data"
+  },
+  "R26BK01748991-000": {
+   "title": "[울산대학교 RISE(앵커)사업단] EdgeCam 현장교육 모델 개발 연구 용역",
+   "core": [
+    {
+     "id": "N11a",
+     "type": "REGION",
+     "values": [
+      "울산"
+     ],
+     "source": "가. 본점소재지를 계속하여 울산광역시에 둔 자"
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "not_requirement",
+     "phrase": "확약"
+    },
+    {
+     "reason": "subjective",
+     "phrase": "이행할 수 있는 업체"
+    },
+    {
+     "reason": "common",
+     "phrase": "청산"
+    },
+    {
+     "reason": "common",
+     "phrase": "등록취소"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-748991",
+    "region_name": "울산광역시 남구",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  },
+  "R26BK01749025-000": {
+   "title": "실시간 공초점·다광자 생체현미경",
+   "core": [
+    {
+     "id": "N12a",
+     "type": "REGISTRATION_CERTIFICATION",
+     "values": [
+      "4110552101"
+     ],
+     "source": "라. 유전자검출기(세부품명번호 4110552101)를 공급물품 또는 제조물품으로 등록"
+    }
+   ],
+   "confirm": [],
+   "checklist": [],
+   "notes": [],
+   "excluded": [
+    {
+     "reason": "common",
+     "phrase": "부정당"
+    },
+    {
+     "reason": "common",
+     "phrase": "조세포탈"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "입찰참가자격등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자 등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "이용자등록"
+    },
+    {
+     "reason": "common",
+     "phrase": "겸임"
+    },
+    {
+     "reason": "common",
+     "phrase": "지문"
+    },
+    {
+     "reason": "common",
+     "phrase": "체납"
+    },
+    {
+     "reason": "common",
+     "phrase": "이해충돌"
+    }
+   ],
+   "ideal_profile": {
+    "company_id": "ideal-749025",
+    "region_name": "광주광역시 북구",
+    "company_size": "SMALL",
+    "industries": [],
+    "staff": {
+     "total_count": 30,
+     "roles": []
+    },
+    "performances": [],
+    "certifications": [
+     {
+      "ref": "c1",
+      "name": "유전자검출기 물품 등록",
+      "certification_code": "4110552101",
+      "issuer_name": null,
+      "issued_at": "2026-01-02",
+      "expires_at": "2028-12-31"
+     }
+    ],
+    "extensions": {},
+    "completeness": {
+     "region": true,
+     "company_size": true,
+     "industries": true,
+     "staff_total": true,
+     "staff_roles": true,
+     "performances": true,
+     "certifications": true
+    }
+   }
+  }
+ }
+}
