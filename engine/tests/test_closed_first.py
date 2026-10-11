@@ -357,3 +357,18 @@ def test_sentence_pieces_from_spaceless_pdf_lines_are_not_industry_names():
     assert unresolved_industry_names(text, [], MasterResolver()) == []
     assert unresolved_industry_names("나. 수중공사업을 등록한 업체", [], MasterResolver()) == ["수중공사업"]
     assert unresolved_industry_names("2) 조경공사업 ※ 건설업역 간 상호시장 진출 허용에 따른 종합건설업", [], MasterResolver()) == ["조경공사업"]
+
+
+def test_rejected_open_condition_stays_as_a_gap_without_lowering_the_analysis(monkeypatch):
+    """모델이 열린 조건에 원문에 없는 세부값을 붙여 검증에서 탈락해도 분석은 성공이다 — 조항은 확인할 공백으로 남는다."""
+    from bidengine.labeling import closed_first
+
+    monkeypatch.setattr(closed_first, "validate_extracted_slot",
+                        lambda slot, target, notice_text=None: (False, "detail not found in source", None))
+    result = _analyze()
+    assert result.status == "SUCCEEDED"
+    assert not any(d.code == "EXTRACTION_PARTIAL" for d in result.diagnostics)
+    assert not any(r.type == "PERFORMANCE_AMOUNT" for r in result.requirements)      # 탈락한 조건은 요건이 되지 않는다
+    assert [d.raw for d in result.dropped_requirements] and all("실적" in d.raw for d in result.dropped_requirements)
+    assert any("실적" in (g.raw or "") for g in result.coverage.gaps)                # 사용자가 확인할 조항으로 남는다
+    assert result.coverage.verdict_complete                                          # 닫힌 값이 없는 조항이라 판정은 막지 않는다
