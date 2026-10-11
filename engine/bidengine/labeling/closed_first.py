@@ -963,7 +963,11 @@ def extract_closed_first(
         **base,
         "slots": slots,
         "dropped_requirements": rejected,
-        "status": "partial" if rejected or base["input_truncated"] or failed else "ok",
+        # 검증에서 탈락한 열린 조건은 '일부 실패' 가 아니다(2026-10-12). 그 조항은 dropped_requirements 로 넘어가 커버리지
+        # 공백이 되고, 닫힌 값이 적힌 조항이면 gap_blocks_verdict 가 판정을 막는다. 여기서 partial 로 내리면 분석이
+        # PARTIAL 이 되어, 판정 대상을 다 본 공고(verdict_complete)도 '확인 필요' 로 떨어졌다 — 모델이 원문에 없는
+        # 세부값을 붙인 실행에서만 그래서 같은 공고가 실행마다 갈렸다(공장등록증 조항, 표본 n 748016).
+        "status": "partial" if base["input_truncated"] or failed else "ok",
         "notes": " ".join(notes) + (f" {last_error}" if failed else ""),
         "candidate_count": candidates_total,
         "clause_texts": [clause.text for clause in kept],
