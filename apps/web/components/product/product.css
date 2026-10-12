@@ -186,7 +186,8 @@ body {
 .app-title-band {
   /* Keep the qualification-review header height for all pages. */
   height: 142px;
-  background: linear-gradient(120.17deg, #dfe9ff 0%, #e9e2fb 33.82%, #dcefff 73.53%);
+  /* 공고 찾기 검색 상자 아래 띠와 같은 진한 파랑. 그라데이션은 공고 찾기 첫 화면에만 남긴다(2026-10-12). */
+  background: var(--product-accent-deep);
 }
 
 .app-title-band-tall {

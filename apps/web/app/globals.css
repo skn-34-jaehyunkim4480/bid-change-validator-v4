@@ -233,8 +233,8 @@ body {
 
   .app-title-band {
     height: 120px;
-    background: linear-gradient(90deg, #f1f5ff 0%, #f7f9fc 58%, #eef2ff 100%);
-    border-bottom: 1px solid var(--product-line);
+    background: var(--product-accent-deep);
+    border-bottom: 0;
   }
 
   .app-shell-content {
