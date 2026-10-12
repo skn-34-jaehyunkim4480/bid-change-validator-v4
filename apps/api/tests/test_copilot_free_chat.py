@@ -230,3 +230,33 @@ def test_passages_are_ranked_by_the_question_not_by_document_order() -> None:
     assert rank_passages(records, "제안서 평가 배점 어떻게 돼?")[0].metadata.chunk_id == "c4"
     assert rank_passages(records, "오늘 날씨 어때?") == []                     # 맞는 대목이 없으면 근거를 붙이지 않는다
     assert rank_passages([], "제출 서류") == []
+
+
+def test_general_chat_sees_the_site_guide_and_page_name_but_no_case_data() -> None:
+    from apps.api.app.copilot.chat import GeneralChatRequest
+    from apps.api.app.copilot.free_chat import GENERAL_OUT_OF_SCOPE_ANSWER, GENERAL_SYSTEM_PROMPT, SITE_GUIDE, answer_general_question
+
+    seen = {}
+
+    def model(system, body, schema):
+        seen.update(system=system, body=body)
+        return {"scope": "DOMAIN", "answer": "회사 프로필에서 업종을 입력하세요.\n- 업종코드를 고릅니다"}
+
+    result = answer_general_question("업종은 어디서 넣어?", extractor=model, page="공고 찾기",
+                                     history=[FreeChatTurn(question="이 사이트 뭐야?", answer="입찰 참가자격을 검토합니다.")])
+    assert result.status == "OK" and result.scope == "DOMAIN" and result.answer.startswith("회사 프로필에서")
+    assert seen["system"] == GENERAL_SYSTEM_PROMPT
+    assert seen["body"].startswith("[사이트 안내]") and SITE_GUIDE in seen["body"]
+    assert "[지금 보는 화면]\n공고 찾기" in seen["body"] and "[이전 질문]\n이 사이트 뭐야?" in seen["body"]
+    assert "[현재 상태]" not in seen["body"] and "[판정에 쓰인 회사 정보" not in seen["body"]   # 공고·회사 자료는 넣지 않는다
+
+    refused = answer_general_question("오늘 날씨 어때?", extractor=lambda *_: {"scope": "OUT_OF_SCOPE", "answer": "맑아요"})
+    assert refused.answer == GENERAL_OUT_OF_SCOPE_ANSWER
+
+    # 사용 전 안내를 확인하지 않았으면 모델을 부르지 않는다.
+    calls = []
+    payload = GeneralChatRequest(message="이 사이트 뭐야?")
+    off = copilot_router.general_chat_response(payload, False, extractor=lambda *a: calls.append(a) or {"scope": "DOMAIN", "answer": "x"})
+    assert off.answer == CONSENT_ANSWER and not off.external_processing_used and calls == []
+    on = copilot_router.general_chat_response(payload, True, extractor=lambda *a: calls.append(a) or {"scope": "DOMAIN", "answer": "검토 서비스입니다."})
+    assert on.answer == "검토 서비스입니다." and on.external_processing_used and len(calls) == 1

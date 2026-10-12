@@ -2,12 +2,14 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { PanelLeft } from 'lucide-react';
 import { CopilotMascot } from '@/components/copilot/mascot';
 import { PanelBody } from '@/components/copilot/panel';
 import { useCopilot } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { buttonVariants } from '@/components/ui/button';
 import { listPreflightCases, type PreflightCase } from '@/lib/api';
+import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
 
 /*
   AI Copilot 전용 화면(2026-10-12). 참가자격 화면의 떠 있는 패널과 같은 대화를 큰 화면에서 본다.
@@ -18,6 +20,7 @@ export default function CopilotPage() {
   const requested = useSearchParams().get('caseId') ?? '';
   const [cases, setCases] = useState<PreflightCase[] | null>(null);
   const [error, setError] = useState('');
+  const [listOpen, setListOpen] = useState(true);
   const { store } = useCopilot(requested);
   // 어느 검토 건에 대화가 있는지. 저장소가 바뀔 때마다 다시 읽는다.
   const talkedKey = useSyncExternalStore(store.subscribe, () => store.caseIds().join(','), () => '');
@@ -36,12 +39,12 @@ export default function CopilotPage() {
     return { talked: items.filter(item => talked.has(item.id)), fresh: items.filter(item => !talked.has(item.id)) };
   }, [cases, talkedKey]);
 
-  // 고른 것이 없으면 대화가 있는 첫 건, 없으면 첫 검토 건을 연다.
-  const activeId = requested || groups.talked[0]?.id || groups.fresh[0]?.id || '';
-  useEffect(() => {
-    if (!requested && activeId) router.replace(`/copilot?caseId=${encodeURIComponent(activeId)}`);
-  }, [requested, activeId, router]);
+  // 고른 것이 없으면 일반 도우미를 연다. 공고별 대화는 왼쪽 목록에서 고른다.
+  const activeId = requested || GENERAL_CONVERSATION_ID;
+  const general = activeId === GENERAL_CONVERSATION_ID;
   const active = (cases ?? []).find(item => item.id === activeId) ?? null;
+  const generalTurns = store.get(GENERAL_CONVERSATION_ID).turns;
+  const open = (id: string) => router.push(`/copilot?caseId=${encodeURIComponent(id)}`);
 
   const renderItem = (item: PreflightCase) => {
     const turns = store.get(item.id).turns;
@@ -49,7 +52,7 @@ export default function CopilotPage() {
     return (
       <li key={item.id}>
         <button type="button" className="copilot-page-item" aria-current={item.id === activeId ? 'page' : undefined}
-          onClick={() => router.push(`/copilot?caseId=${encodeURIComponent(item.id)}`)}>
+          onClick={() => open(item.id)}>
           <strong>{item.notice_title || item.title}</strong>
           <span>{last ? `${last.question}` : `${item.bid_notice_no} · 대화 없음`}</span>
         </button>
@@ -61,8 +64,15 @@ export default function CopilotPage() {
     <main className="bg-white text-[var(--product-body)]">
       <div className="copilot-page-shell">
         {error && <p role="alert" className="mb-4 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-[15px] text-rose-700">{error}</p>}
-        <div className="copilot-page">
-          <aside className="copilot-page-list" aria-label="공고별 대화">
+        <div className="copilot-page" data-list={listOpen ? 'open' : 'closed'}>
+          <aside className="copilot-page-list" aria-label="대화 목록">
+            <h2>일반 도우미</h2>
+            <div className="copilot-page-general">
+              <button type="button" className="copilot-page-item" aria-current={general ? 'page' : undefined} onClick={() => open(GENERAL_CONVERSATION_ID)}>
+                <strong>사이트 쓰는 법 · 입찰 일반</strong>
+                <span>{generalTurns.at(-1)?.question ?? '어느 화면에서나 물어볼 수 있어요'}</span>
+              </button>
+            </div>
             <h2>공고별 대화</h2>
             {cases === null && !error && <p className="px-[18px] text-[13px] text-[var(--product-muted)]">불러오는 중…</p>}
             {cases?.length === 0 && <p className="px-[18px] text-[13px] leading-5 text-[var(--product-muted)]">검토 중인 공고가 없습니다. 공고 찾기에서 검토를 시작하면 여기에 나옵니다.</p>}
@@ -74,14 +84,16 @@ export default function CopilotPage() {
             </ul>
           </aside>
           <section className="copilot-panel copilot-page-chat" aria-label="AI Copilot 대화">
-            {active ? (
+            {general || active ? (
               <>
                 <header className="copilot-header">
+                  <button type="button" className="copilot-list-toggle" aria-label={listOpen ? '대화 목록 접기' : '대화 목록 펴기'} aria-expanded={listOpen}
+                    title={listOpen ? '대화 목록 접기' : '대화 목록 펴기'} onClick={() => setListOpen(value => !value)}><PanelLeft size={18} /></button>
                   <CopilotMascot />
-                  <h2 className="min-w-0 truncate">{active.notice_title || active.title}</h2>
-                  <ChatActions caseId={active.id} />
+                  <h2 className="min-w-0 truncate">{active ? (active.notice_title || active.title) : '일반 도우미'}</h2>
+                  <ChatActions caseId={activeId} general={general} />
                 </header>
-                <PanelBody key={active.id} caseId={active.id} page="QUALIFICATION" />
+                <PanelBody key={activeId} caseId={activeId} page="QUALIFICATION" screen="AI Copilot" />
               </>
             ) : (
               <div className="copilot-page-empty">
@@ -97,12 +109,12 @@ export default function CopilotPage() {
   );
 }
 
-function ChatActions({ caseId }: { caseId: string }) {
+function ChatActions({ caseId, general }: { caseId: string; general: boolean }) {
   const { store, state } = useCopilot(caseId);
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2">
       {state.turns.length > 0 && <button type="button" className="copilot-new-conversation" disabled={state.busy} onClick={() => store.newConversation(caseId)}>새 대화</button>}
-      <NavigationLink href={`/qualification?caseId=${encodeURIComponent(caseId)}`} className="text-[13px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">참가자격 화면</NavigationLink>
+      {!general && <NavigationLink href={`/qualification?caseId=${encodeURIComponent(caseId)}`} className="text-[13px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">참가자격 화면</NavigationLink>}
     </div>
   );
 }

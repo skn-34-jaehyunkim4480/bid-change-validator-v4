@@ -15,8 +15,8 @@ from ..qualification.judgment import QualificationJudgmentError
 from ..revalidation_schemas import QualificationRevalidationRead
 from .actions import confirm_action
 from bidengine.providers.openai import OpenAIStructuredExtractor
-from .chat import CopilotChatRequest, CopilotChatResponse, DocumentSource, _action_control, chat, route_intent
-from .free_chat import CONSENT_ANSWER, answer_free_question, document_passages, load_briefing
+from .chat import CopilotChatRequest, CopilotChatResponse, DocumentSource, GeneralChatRequest, _action_control, chat, route_intent
+from .free_chat import CONSENT_ANSWER, answer_free_question, answer_general_question, document_passages, load_briefing
 from .context import compact
 from .contracts import ConfirmAction
 from .document_qa import answer_grounded_document_question
@@ -143,6 +143,27 @@ def free_chat_response(db, payload: CopilotChatRequest, case, semantic_processin
         external_processing_used=used,
         external_processing_scope="PUBLIC_NOTICE_DOCUMENT" if used and passages else None,
     )
+
+
+def general_chat_response(payload: GeneralChatRequest, semantic_processing: bool, *, extractor=None) -> CopilotChatResponse:
+    """일반 도우미 한 턴. 공고별 대화와 같이 사용 전 안내를 확인했을 때만 모델을 부른다."""
+    if not semantic_processing:
+        return CopilotChatResponse(answer=CONSENT_ANSWER, intent="UNKNOWN")
+    provider = extractor or OpenAIStructuredExtractor()
+    result = answer_general_question(
+        payload.message, history=payload.history, page=payload.page,
+        extractor=provider if getattr(provider, "available", True) else None,
+    )
+    return CopilotChatResponse(answer=result.answer, intent="UNKNOWN", external_processing_used=result.status == "OK")
+
+
+@router.post("/general-chat", response_model=CopilotChatResponse)
+def copilot_general_chat(
+    payload: GeneralChatRequest,
+    semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
+    _user: AppUser | None = Depends(get_optional_current_user),
+) -> CopilotChatResponse:
+    return general_chat_response(payload, semantic_processing)
 
 
 @router.post("/chat", response_model=CopilotChatResponse)

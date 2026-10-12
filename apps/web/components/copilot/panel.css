@@ -101,3 +101,11 @@
 .copilot-page-chat .copilot-input textarea{background:transparent;border:0;font-size:15px;line-height:22px;padding:8px 0;outline:none}
 .copilot-page-chat .copilot-input small{text-align:center}
 @media(max-width:1023px){.copilot-page{grid-template-columns:1fr;height:auto}.copilot-page-list{max-height:200px;padding-left:12px;border-bottom:1px solid var(--product-line-2)}.copilot-panel.copilot-page-chat{height:calc(100dvh - 330px);min-height:420px;border-radius:0}}
+
+/* 일반 도우미 표시와 전용 화면의 목록 접기. */
+.copilot-mode{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--product-tint);color:var(--product-muted);font-size:11px;font-weight:700;vertical-align:middle}
+.copilot-page[data-list=closed]{grid-template-columns:minmax(0,1fr)}
+.copilot-page[data-list=closed] .copilot-page-list{display:none}
+.copilot-list-toggle{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:10px;color:var(--product-muted)}
+.copilot-list-toggle:hover{background:var(--product-tint);color:var(--product-ink)}
+.copilot-page-general{margin:0 8px 4px}

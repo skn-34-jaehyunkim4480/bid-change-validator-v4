@@ -10,12 +10,19 @@ import { CopilotMascot } from './mascot';
 import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
+import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
 import './panel.css';
 
 const pages = { '/qualification': 'QUALIFICATION', '/ask-back': 'ASK_BACK', '/evidence': 'EVIDENCE', '/changes': 'CHANGES' } as const;
+/** 일반 도우미에 알려 줄 화면 이름. 공고를 연 화면이 아니면 패널은 일반 도우미로 뜬다. */
+const SCREEN_NAMES: Array<[string, string]> = [
+  ['/notices', '공고 찾기'], ['/qualification', '내 입찰 건'], ['/ask-back', '확인 필요'], ['/evidence', '근거 원문'], ['/evaluation', '평가 대응'],
+  ['/changes', '변경 이력'], ['/company', '회사 프로필'], ['/recommendations', 'AI 추천'], ['/guide', '이용안내'], ['/admin', '운영 관리'], ['/copilot', 'AI Copilot'],
+];
+export const screenNameOf = (pathname: string) => SCREEN_NAMES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
 const noJudgmentCodes = ['CURRENT_JUDGMENT_REQUIRED', 'QUALIFICATION_JUDGMENT_NOT_FOUND', 'JUDGMENT_NOT_FOUND'];
 const href = (page: string, caseId: string) => `${page}?caseId=${encodeURIComponent(caseId)}`;
 
@@ -25,7 +32,12 @@ export function CopilotPanel() {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
-  const page = pages[pathname as keyof typeof pages];
+  const casePage = pages[pathname as keyof typeof pages];
+  // 공고를 연 화면이면 그 공고의 대화, 아니면 일반 도우미다. 전용 화면(/copilot)에는 떠 있는 패널을 두지 않는다.
+  const general = !(casePage && caseId);
+  const hidden = pathname.startsWith('/copilot') || pathname === '/login';
+  const page = hidden ? undefined : casePage ?? 'QUALIFICATION';
+  const activeId = general ? GENERAL_CONVERSATION_ID : caseId;
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -90,8 +102,8 @@ export function CopilotPanel() {
     <dialog ref={dialog} id="copilot-panel" className="copilot-panel" aria-labelledby="copilot-title" onCancel={close}>
       <button type="button" className="copilot-resize" aria-label="도우미 창 크기 조절" title="끌어서 크기 조절 · 두 번 누르면 원래 크기"
         onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={resetSize} />
-      <PanelHeader caseId={caseId} close={close} />
-      <PanelBody key={caseId} caseId={caseId} page={page} />
+      <PanelHeader caseId={activeId} close={close} />
+      <PanelBody key={activeId} caseId={activeId} page={page} screen={screenNameOf(pathname)} />
     </dialog>
   </>;
 }
@@ -141,7 +153,7 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
   const summary = last && 'overall_status' in last ? last : null;
   const version = last && ('version_number' in last.provenance ? last.provenance.version_number : last.provenance.current.version_number);
   return <header className="copilot-header">
-    <CopilotMascot /><h2 id="copilot-title">AI Copilot</h2>
+    <CopilotMascot /><h2 id="copilot-title">AI Copilot</h2>{caseId === GENERAL_CONVERSATION_ID && <span className="copilot-mode">일반 도우미</span>}
     <div className="copilot-header-badges" aria-label="최근 조회한 판정 기준">
       {version != null && <span className="copilot-badge">조회 v{version}</span>}
       {summary && !state.error && <span className={`copilot-badge copilot-status-${summary.overall_status}`}>{getCopilotStatusLabel(summary.overall_status)}</span>}
@@ -185,7 +197,8 @@ function useRememberedConsent(kind: 'semantic' | 'document') {
 export type CopilotSourcePage = typeof pages[keyof typeof pages];
 
 /** 대화 본문(안내·추천 질문·대화·입력창). 떠 있는 패널과 전용 화면(/copilot)이 함께 쓴다. */
-export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourcePage }) {
+export function PanelBody({ caseId, page, screen }: { caseId: string; page: CopilotSourcePage; screen?: string }) {
+  const general = caseId === GENERAL_CONVERSATION_ID;
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
   // AI 처리 동의는 사용자가 직접 켠다. 한 번 고른 값은 이 브라우저에 기억해, 패널을 열 때마다 다시 켜지 않아도 된다.
@@ -197,13 +210,13 @@ export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourc
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [state.turns, state.busy]);
   useEffect(() => {
-    if (!caseId) return;
+    if (!caseId || general) return;   // 추천 질문은 공고별 대화에만 있다
     const controller = new AbortController();
     void getCopilotJobs(caseId, controller.signal)
       .then(catalog => setCatalogState({ caseId, catalog, error: '' }))
       .catch(error => { if (!controller.signal.aborted) setCatalogState({ caseId, catalog: null, error: error instanceof Error ? error.message : '질문 목록을 불러오지 못했습니다.' }); });
     return () => controller.abort();
-  }, [caseId]);
+  }, [caseId, general]);
   const catalog = catalogState.caseId === caseId ? catalogState.catalog : null;
   const catalogError = catalogState.caseId === caseId ? catalogState.error : '';
   // SPA navigation keeps the panel mounted; each destination starts with its
@@ -212,6 +225,7 @@ export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourc
   const ask = (text: string, intent?: CopilotIntent, guided?: { jobId: string; questionId: string }, free = false) => {
     if (!caseId || state.busy || !text.trim()) return;
     setJobsOpen({ page, open: false });
+    if (general) { void store.askGeneral(text.trim(), screen, semanticProcessing); return; }
     void store.ask(caseId, text.trim(), intent, page, semanticProcessing, free ? documentProcessing : false, guided, free);
   };
   // 추천 질문의 두 묶음은 답하는 길이 다르다(2026-10-12).
@@ -229,8 +243,10 @@ export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourc
     <div className={`copilot-content${empty ? ' copilot-content-empty' : ''}`}>
       {empty && <div className="copilot-empty" data-state="EMPTY">
         <CopilotMascot size={64} />
-        <h3>{caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
-        <p>저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.</p>
+        <h3>{general ? '무엇이든 물어보세요' : caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
+        <p>{general
+          ? '비드체크 쓰는 법과 입찰 절차·용어에 답해 드려요. 특정 공고의 판정이나 서류는 그 공고를 연 화면에서 물어봐 주세요.'
+          : '저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.'}</p>
       </div>}
       {/* 사용 전 안내는 처음 한 번만 보인다. 확인하면 이 브라우저에서 다시 묻지 않는다. */}
       {caseId && !semanticProcessing && <div className="copilot-processing-options" aria-label="사용 전 안내">
@@ -318,7 +334,7 @@ export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourc
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : '공고나 우리 회사 참가자격에 대해 질문해 주세요'}
+          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : general ? '사이트 쓰는 법이나 입찰에 대해 질문해 주세요' : '공고나 우리 회사 참가자격에 대해 질문해 주세요'}
           disabled={!caseId || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
