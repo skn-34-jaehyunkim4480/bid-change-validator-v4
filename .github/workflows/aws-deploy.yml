@@ -84,13 +84,6 @@ jobs:
       - name: Login to ECR
         if: steps.target.outputs.current == 'true'
         run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
-      - name: Stage pinned rhwp PR8 binary
-        if: steps.target.outputs.current == 'true'
-        run: |
-          mkdir -p apps/api/rhwp-bin
-          test -f apps/api/rhwp-bin/rhwp
-          echo '435209cc31429e89f894cd4a639c7506611c6a4eea158842d2fbffe44ad057f5  apps/api/rhwp-bin/rhwp' | sha256sum --check --status
-          chmod +x apps/api/rhwp-bin/rhwp
       - name: Build and publish immutable API image
         if: steps.target.outputs.current == 'true'
         run: |

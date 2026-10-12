@@ -16,6 +16,11 @@ x-documents: &documents
   DOCUMENT_S3_PREFIX: notice-documents
   AWS_REGION: ap-northeast-2
 
+x-rhwp: &rhwp
+  type: bind
+  source: /opt/bidcheck/rhwp-pr8-20261013/rhwp
+  target: /usr/local/bin/rhwp
+  read_only: true
 x-ca: &ca
   type: bind
   source: /opt/bidcheck/rds-global-bundle.pem
@@ -29,6 +34,7 @@ services:
     environment: *db
     volumes:
       - *ca
+      - *rhwp
     command: ["python", "-m", "app.aws_schema_check"]
 
   api:
@@ -59,6 +65,7 @@ services:
       DOCUMENT_RAG_INDEX_ROOT: /data/document-rag
     volumes:
       - *ca
+      - *rhwp
       - document_rag_index_data:/data/document-rag
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -88,6 +95,7 @@ services:
       NOTICE_HISTORY_BACKFILL_RETRY_MINUTES: ${NOTICE_HISTORY_BACKFILL_RETRY_MINUTES:-15}
     volumes:
       - *ca
+      - *rhwp
     command: ["python", "-m", "app.workers.notice_polling"]
 
   processing-worker:
@@ -107,6 +115,7 @@ services:
       DOCUMENT_RAG_INDEX_ROOT: /data/document-rag
     volumes:
       - *ca
+      - *rhwp
       - document_rag_index_data:/data/document-rag
     command: ["python", "-m", "app.workers.notice_processing"]
 
