@@ -88,7 +88,7 @@ jobs:
         if: steps.target.outputs.current == 'true'
         run: |
           mkdir -p apps/api/rhwp-bin
-          aws s3 cp "s3://$BUCKET/deploy/rhwp-pr8-6bfdbfc-linux-x86_64" apps/api/rhwp-bin/rhwp --only-show-errors
+          test -f apps/api/rhwp-bin/rhwp
           echo '435209cc31429e89f894cd4a639c7506611c6a4eea158842d2fbffe44ad057f5  apps/api/rhwp-bin/rhwp' | sha256sum --check --status
           chmod +x apps/api/rhwp-bin/rhwp
       - name: Build and publish immutable API image
