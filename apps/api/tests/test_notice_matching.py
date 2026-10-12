@@ -13,80 +13,84 @@ from apps.api.app.qualification.matching import (
 )
 
 
-def test_notice_matching_loads_runs_in_batch_without_per_notice_scalar_queries() -> None:
+def _history_fixture(*, current=False):
     company_id = uuid4()
+    other_company_id = uuid4()
     notice_id = uuid4()
     run_id = uuid4()
-    notice = SimpleNamespace(
-        id=notice_id,
-        bid_notice_no="R26BK00000001",
-        title="테스트 공고",
-        announcing_institution_name="테스트 기관",
+    case_id = uuid4()
+    notice = SimpleNamespace(id=notice_id, bid_notice_no="R26BK00000001", title="기존 공고", announcing_institution_name="테스트 기관")
+    version = SimpleNamespace(id=uuid4(), version_number=1, is_current=current)
+    now = datetime.now(timezone.utc)
+    analysis = SimpleNamespace(id=uuid4(), status="PARTIAL", created_at=now, requirements=[object()], evidence=[])
+    judgment = SimpleNamespace(
+        id=run_id, preflight_case_id=case_id, notice_version_id=version.id,
+        analysis_run_id=analysis.id, analysis_run=analysis, overall_status="ineligible",
+        created_at=now, judgments=[SimpleNamespace(status="UNSATISFIED")],
     )
-    version = SimpleNamespace(id=uuid4(), version_number=1, documents=[])
-    run = SimpleNamespace(
-        id=run_id,
-        notice_version_id=version.id,
-        status="SUCCEEDED",
-        created_at=datetime.now(timezone.utc),
-    )
-    analysis = SimpleNamespace(requirements=[], evidence=[], verdict_complete=None)
-    evaluation = SimpleNamespace(overall_status="core_met", judgments=[])
-
     db = MagicMock()
-    db.execute.return_value.all.return_value = [(notice, version)]
-    db.scalars.return_value.all.return_value = [run]
-    db.get.return_value = None
+    db.scalar.return_value = 1
+    db.scalars.return_value.all.return_value = [run_id]
+    db.execute.return_value.all.return_value = [(judgment, notice, version)]
+    return db, company_id, other_company_id, notice, version, judgment
 
-    with (
-        patch("apps.api.app.qualification.matching._load_company", return_value=object()),
-        patch("apps.api.app.qualification.matching._record_to_completeness", return_value=None),
-        patch("apps.api.app.qualification.matching.build_company_profile_snapshot", return_value=object()),
-        patch("apps.api.app.qualification.matching.qualification_analysis_version_fingerprint", return_value="a" * 64),
-        patch("apps.api.app.qualification.matching.analysis_run_response", return_value=analysis),
-        patch("apps.api.app.qualification.matching.judge_requirements", return_value=evaluation),
-    ):
+
+def test_history_is_scoped_to_company_and_preserves_previous_versions() -> None:
+    db, company_id, other_company_id, notice, version, judgment = _history_fixture()
+    with patch('apps.api.app.qualification.matching._load_company', return_value=object()):
         result = match_cached_notices(db, company_id=company_id, limit=12)
 
     assert result.analyzed_notice_count == 1
     assert result.returned_count == 1
-    assert result.items[0].analysis_run_id == run_id
-    db.execute.assert_called_once()
-    candidate_sql = str(db.execute.call_args.args[0])
-    assert "EXISTS" in candidate_sql
-    assert "input_fingerprint IS NOT NULL" in candidate_sql
-    assert "qualification_judgment_runs" in candidate_sql
-    assert "preflight_cases" in candidate_sql
-    assert "qualification_judgment_runs.company_id" in candidate_sql
-    assert "preflight_cases.company_id" in candidate_sql
-    assert "preflight_cases.current_version_id" in candidate_sql
-    assert "preflight_cases.notice_id" in candidate_sql
-    # Both the judgment and its owning case must be bound to this company.
-    bound_values = db.execute.call_args.args[0].compile().params.values()
-    assert list(bound_values).count(company_id) == 2
-    db.scalars.assert_called_once()
-    db.scalar.assert_not_called()
+    assert result.items[0].case_id == judgment.preflight_case_id
+    assert result.items[0].notice_id == notice.id
+    assert result.items[0].version_number == 1
+    assert result.items[0].is_current_version is False
+    assert result.items[0].overall_status == "core_unmet"
+    assert result.items[0].unsatisfied_count == 1
+    assert result.items[0].analysis_status == "PARTIAL"
+    ranked_sql = str(db.scalar.call_args.args[0])
+    assert "qualification_judgment_runs" in ranked_sql
+    assert "preflight_cases" in ranked_sql
+    assert "is_current" not in ranked_sql
+    assert "input_fingerprint" not in ranked_sql
+    assert list(db.scalar.call_args.args[0].compile().params.values()).count(company_id) == 2
+    assert other_company_id not in db.scalar.call_args.args[0].compile().params.values()
+    query_sql = str(db.execute.call_args.args[0])
+    assert "preflight_cases.company_id" in query_sql
+    assert "qualification_judgment_runs.company_id" in query_sql
 
 
-def test_notice_matching_does_not_fingerprint_versions_with_only_legacy_runs() -> None:
-    """Versions without lineage cannot match, so their documents need not be loaded."""
+def test_history_supports_legacy_needs_review_status() -> None:
+    db, company_id, _, _, _, judgment = _history_fixture()
+    judgment.overall_status = "needs_review"
+    with patch('apps.api.app.qualification.matching._load_company', return_value=object()):
+        result = match_cached_notices(db, company_id=company_id)
+    assert result.items[0].overall_status == "needs_review"
+
+def test_history_returns_zero_when_company_has_no_judgments() -> None:
     db = MagicMock()
-    db.execute.return_value.all.return_value = []
-    db.get.return_value = None
-
-    with (
-        patch("apps.api.app.qualification.matching._load_company", return_value=object()),
-        patch("apps.api.app.qualification.matching._record_to_completeness", return_value=None),
-        patch("apps.api.app.qualification.matching.build_company_profile_snapshot", return_value=object()),
-        patch("apps.api.app.qualification.matching.qualification_analysis_version_fingerprint") as fingerprint,
-    ):
-        result = match_cached_notices(db, company_id=uuid4())
-
+    db.scalar.return_value = 0
+    company_id = uuid4()
+    with patch('apps.api.app.qualification.matching._load_company', return_value=object()):
+        result = match_cached_notices(db, company_id=company_id)
+    assert result.returned_count == 0
     assert result.analyzed_notice_count == 0
     assert result.items == []
-    assert "input_fingerprint IS NOT NULL" in str(db.execute.call_args.args[0])
-    fingerprint.assert_not_called()
+    db.execute.assert_not_called()
     db.scalars.assert_not_called()
+
+
+def test_history_pages_without_rejecting_historical_judgments() -> None:
+    db, company_id, _, _, _, _ = _history_fixture(current=True)
+    db.scalar.return_value = 31
+    with patch('apps.api.app.qualification.matching._load_company', return_value=object()):
+        result = match_cached_notices(db, company_id=company_id, limit=12, offset=12)
+    assert result.offset == 12
+    assert result.analyzed_notice_count == 31
+    assert result.returned_count == 1
+    params = db.scalars.call_args.args[0].compile().params
+    assert 12 in params.values()
 
 
 def test_latest_valid_run_query_handles_multiple_notices_and_histories() -> None:

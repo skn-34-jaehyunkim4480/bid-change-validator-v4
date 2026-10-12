@@ -3,10 +3,12 @@ import { apiFetch, ApiError } from '@/lib/api';
 
 export type NoticeMatch = {
   notice_id: string;
+  case_id: string;
   bid_notice_no: string;
   title: string;
   institution_name: string | null;
   version_number: number;
+  is_current_version: boolean;
   analysis_run_id: string;
   analysis_status: string;
   overall_status: 'core_met' | 'core_unmet' | 'needs_review';
@@ -16,18 +18,20 @@ export type NoticeMatch = {
   requirement_count: number;
   evidence_count: number;
   analyzed_at: string;
+  judged_at: string;
 };
 
 export type NoticeMatchResponse = {
   company_id: string;
   analyzed_notice_count: number;
   returned_count: number;
+  offset: number;
   items: NoticeMatch[];
   note: string;
 };
 
-export async function listNoticeMatches(companyId: string, limit = 50) {
-  const path = `/api/v1/companies/${companyId}/notice-matches?limit=${limit}`;
+export async function listNoticeMatches(companyId: string, limit = 50, offset = 0) {
+  const path = `/api/v1/companies/${companyId}/notice-matches?limit=${limit}&offset=${offset}`;
   return sharedRead(path, async () => {
     const response = await apiFetch(path);
     if (!response.ok) {
