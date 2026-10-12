@@ -8,5 +8,3 @@
 **/*.py[cod]
 engine/tests
 engine/scripts
-!apps/api/rhwp-bin
-!apps/api/rhwp-bin/rhwp
