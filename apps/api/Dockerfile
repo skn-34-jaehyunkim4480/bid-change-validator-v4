@@ -14,6 +14,8 @@ COPY engine /opt/engine
 RUN pip install --no-cache-dir --no-deps /opt/engine
 
 COPY apps/api/app ./app
+COPY apps/api/rhwp-bin/rhwp /usr/local/bin/rhwp
+RUN chmod 0755 /usr/local/bin/rhwp
 COPY apps/api/alembic.ini .
 COPY apps/api/alembic ./alembic
 
