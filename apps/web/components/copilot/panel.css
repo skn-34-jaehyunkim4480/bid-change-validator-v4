@@ -22,3 +22,10 @@
 
 /* 자유 대화 답변은 모델이 쓴 줄바꿈을 그대로 보여 준다. */
 .copilot-free-answer { white-space: pre-wrap; }
+
+/* 동의한 뒤의 한 줄 설정: 공고문 근거 답변 켜기와 AI 설명 끄기. */
+.copilot-settings-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 2px 0;font-size:12px;color:var(--product-muted)}
+.copilot-inline-toggle{display:flex;align-items:center;gap:7px;min-height:28px;color:var(--product-body);cursor:pointer}
+.copilot-consent-off{border:0;background:none;padding:4px 2px;font-size:11px;color:var(--product-muted);text-decoration:underline;cursor:pointer}
+.copilot-consent-off:hover{color:var(--product-body)}
+.copilot-consent-off:disabled{cursor:default;opacity:.5}
