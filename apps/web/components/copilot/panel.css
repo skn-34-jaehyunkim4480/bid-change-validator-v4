@@ -21,7 +21,11 @@
 @media(max-width:1023px){.copilot-panel{inset:auto 0 0 auto;width:min(400px,100vw);height:min(720px,95dvh);max-width:100vw;max-height:95dvh;border-bottom-left-radius:0;border-bottom-right-radius:0}.copilot-launch{right:16px;bottom:16px}.copilot-input{padding-bottom:max(12px,env(safe-area-inset-bottom))}}
 
 /* 자유 대화 답변은 모델이 쓴 줄바꿈을 그대로 보여 준다. */
-.copilot-free-answer { white-space: pre-wrap; }
+.copilot-free-answer{display:grid;gap:8px}
+.copilot-free-answer p{margin:0;white-space:pre-wrap}
+.copilot-free-answer ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.copilot-free-answer li{position:relative;padding-left:14px;line-height:20px}
+.copilot-free-answer li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--product-accent)}
 
 /* 사용 전 안내: 한 문장과 '이해하였습니다' 체크. 확인하면 사라진다. */
 .copilot-processing-options{display:grid;gap:10px;padding:14px;border:1px solid var(--product-line);border-radius:14px;background:var(--product-tint-2)}
@@ -44,3 +48,5 @@
 .copilot-resize:hover::before,.copilot-resize:focus-visible::before{border-color:var(--product-accent)}
 }
 @media(max-width:1023px){.copilot-resize{display:none}}
+
+.copilot-free-answer li strong{display:block;font-weight:700;color:var(--product-ink)}

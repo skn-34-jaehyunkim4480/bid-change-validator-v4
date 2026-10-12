@@ -10,7 +10,7 @@ import { CopilotMascot } from './mascot';
 import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
-import { getCopilotStatusLabel, getSourceLocationLabel } from '@/lib/copilot-view-model';
+import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
 import './panel.css';
@@ -330,6 +330,19 @@ function SourceChip({ source, caseId, analysisRunId }: { source: CopilotSource; 
   </CopilotNavigationLink>;
 }
 
+/** 자유 대화 답변: 문단은 문단으로, '- ' 로 시작하는 줄은 글머리 목록으로 그린다. */
+function FreeAnswer({ answer }: { answer: string }) {
+  return <div className="copilot-free-answer">
+    {splitAnswerBlocks(answer).map((block, index) => block.kind === 'list'
+      ? <ul key={index}>{block.items.map((item, itemIndex) => {
+        // "제출 방법: 나라장터에 직접 입력" 처럼 짧은 머리말이 있으면 굵게 해 훑어보기 쉽게 한다.
+        const label = /^([^:：]{2,16})[:：]\s+(.+)$/.exec(item);
+        return <li key={itemIndex}>{label ? <><strong>{label[1]}</strong>{label[2]}</> : item}</li>;
+      })}</ul>
+      : <p key={index}>{block.text}</p>)}
+  </div>;
+}
+
 function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void }) {
   const p = response.presentation;
   const { controller, action } = useActions(caseId);
@@ -361,7 +374,7 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
       </div>}
       {p.limitations.map((text, i) => <p className="copilot-limitation" key={i}>{text}</p>)}
       {p.next_action && <p>{p.next_action.label}</p>}
-    </> : <p className="copilot-free-answer">{response.answer}</p>}
+    </> : <FreeAnswer answer={response.answer} />}
     {response.sources.length > 0 && <details><summary>원문 근거 {response.sources.length}건</summary>
       {response.sources.map(source => <div className="copilot-source" key={source.ref}>
         <SourceChip source={source} caseId={caseId} analysisRunId={analysisRunId} />
