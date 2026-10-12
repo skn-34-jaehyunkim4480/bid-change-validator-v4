@@ -1,4 +1,8 @@
 import hashlib
+import json
+import os
+import subprocess
+import tempfile
 import re
 import struct
 import zlib
@@ -80,6 +84,75 @@ def _finish(extractor: str, blocks: list[dict[str, Any]]) -> ExtractionResult:
         blocks=normalized_blocks,
     )
 
+
+def _try_extract_rhwp(source: BinaryIO, *, extension: str) -> ExtractionResult | None:
+    """Opt-in native PR8 CLI extraction; any unsafe/incomplete output falls back.
+
+    The tested CLI's `export-text --json` returns ordered per-page text, not the
+    original paragraph-level structure. Do not silently replace existing
+    evidence locations except when the operator explicitly chooses `prefer`.
+    """
+    executable = os.getenv("BIDCHECK_RHWP_BIN", "/usr/local/bin/rhwp").strip()
+    if not executable:
+        return None
+    if extension not in {".hwp", ".hwpx"}:
+        return None
+    try:
+        source.seek(0)
+        data = source.read(32 * 1024 * 1024 + 1)
+        if len(data) > 32 * 1024 * 1024 or not data:
+            return None
+        with tempfile.TemporaryDirectory(prefix="bidcheck-rhwp-") as directory:
+            path = Path(directory) / ("input" + extension)
+            path.write_bytes(data)
+            completed = subprocess.run(
+                [executable, "export-text", str(path), "--json", "--max-chars", "400000"],
+                capture_output=True, timeout=30, check=False,
+            )
+        if completed.returncode != 0 or len(completed.stdout) > 2_000_000:
+            return None
+        result = json.loads(completed.stdout.decode("utf-8"))
+        pages = result.get("pages")
+        count = result.get("pageCount")
+        if (result.get("truncated") or not isinstance(pages, list)
+                or not isinstance(count, int) or count != len(pages) or count < 1):
+            return None
+        blocks = []
+        for item in pages:
+            if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+                return None
+            page = item.get("page")
+            if not isinstance(page, int) or not 0 <= page < count:
+                return None
+            blocks.append({"page": page + 1, "location": f"p.{page + 1}",
+                           "text": item["text"]})
+        parsed = _finish("RHWP_PR8_PAGE_TEXT", blocks)
+        return parsed if parsed.text else None
+    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired,
+            json.JSONDecodeError):
+        return None
+    finally:
+        source.seek(0)
+
+
+def _extract_with_optional_rhwp(source: BinaryIO, *, extension: str,
+                                fallback: Any) -> ExtractionResult:
+    mode = os.getenv("BIDCHECK_RHWP_MODE", "fallback").strip().lower()
+    if mode == "prefer":
+        enhanced = _try_extract_rhwp(source, extension=extension)
+        if enhanced is not None:
+            return enhanced
+    try:
+        legacy = fallback(source)
+        if legacy.text:
+            return legacy
+    except (UnsupportedDocumentError, ValueError, OSError, EOFError):
+        enhanced = _try_extract_rhwp(source, extension=extension)
+        if enhanced is not None:
+            return enhanced
+        raise
+    enhanced = _try_extract_rhwp(source, extension=extension)
+    return enhanced if enhanced is not None else legacy
 
 def _decode_hwp_paragraph_text(payload: bytes) -> str:
     """Decode visible text while skipping HWP paragraph control records."""
@@ -581,7 +654,7 @@ def extract_document(
     if signature.startswith(b"%PDF") or suffix == ".pdf":
         return _extract_pdf(source)
     if signature.startswith(b"\xd0\xcf\x11\xe0"):
-        return _extract_hwp(source)
+        return _extract_with_optional_rhwp(source, extension=".hwp", fallback=_extract_hwp)
     # Some G2B downloads contain HWPML XML bytes under a .hwpx name.
     # Identify the actual XML payload before the ZIP-by-extension fallback.
     if suffix in {".hwp", ".hwpx", ".hml"} and signature.lstrip(
@@ -594,7 +667,7 @@ def extract_document(
                 names = set(archive.namelist())
             source.seek(0)
             if any(name.lower().startswith("contents/section") for name in names):
-                return _extract_hwpx(source)
+                return _extract_with_optional_rhwp(source, extension=".hwpx", fallback=_extract_hwpx)
             if "word/document.xml" in names:
                 return _extract_docx(source)
         except BadZipFile as error:
