@@ -55,6 +55,15 @@ def test_notice_matching_loads_runs_in_batch_without_per_notice_scalar_queries()
     candidate_sql = str(db.execute.call_args.args[0])
     assert "EXISTS" in candidate_sql
     assert "input_fingerprint IS NOT NULL" in candidate_sql
+    assert "qualification_judgment_runs" in candidate_sql
+    assert "preflight_cases" in candidate_sql
+    assert "qualification_judgment_runs.company_id" in candidate_sql
+    assert "preflight_cases.company_id" in candidate_sql
+    assert "preflight_cases.current_version_id" in candidate_sql
+    assert "preflight_cases.notice_id" in candidate_sql
+    # Both the judgment and its owning case must be bound to this company.
+    bound_values = db.execute.call_args.args[0].compile().params.values()
+    assert list(bound_values).count(company_id) == 2
     db.scalars.assert_called_once()
     db.scalar.assert_not_called()
 
