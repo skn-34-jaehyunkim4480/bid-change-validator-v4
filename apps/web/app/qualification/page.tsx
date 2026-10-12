@@ -9,11 +9,12 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { DocumentSourceViewer } from '@/components/product/document-source-viewer';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, GAP_CATEGORY_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, CHANGE_TYPE_LABEL, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, GAP_CATEGORY_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -136,6 +137,14 @@ function citedEvidenceCount(analysis: QualificationAnalysisRun) {
   return new Set(analysis.requirements.flatMap((item) => item.evidence_keys)).size;
 }
 
+function changeDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+}
+
+function changeMoney(value: number | null | undefined) {
+  return value == null ? '-' : `${value.toLocaleString()} 원`;
+}
+
 function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefined) {
   const copy = status ? OVERALL_STATUS_COPY[status] : null;
   if (copy) return [copy.label, copy.description];
@@ -146,7 +155,15 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
   if (judgment?.basis_type === 'USER_ANSWER') return '사용자 답변으로 판정 · 회사 프로필에는 반영하지 않음';
   if (!company) return '회사 프로필 없음';
   switch (requirement.type) {
-    case 'INDUSTRY': return company.industries.length ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ') : '비어 있음';
+    case 'INDUSTRY': {
+      // 회사의 업종을 전부 늘어놓지 않는다 — 이 요건이 묻는 업종만 보여 준다(같이 요구한 코드, 대신 인정되는 상위 면허 포함).
+      if (!company.industries.length) return '비어 있음';
+      const scopeCodes = (key: string) => (Array.isArray(requirement.scope[key]) ? requirement.scope[key] as unknown[] : []).map((code) => `${code as string}`);
+      const wanted = [`${requirement.value ?? ''}`, ...scopeCodes('with_codes'), ...scopeCodes('accepted_by')].filter(Boolean);
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '');
+      const held = company.industries.filter((item) => wanted.some((code) => code === item.code || (!/^\d{4}$/.test(code) && loose(item.name).includes(loose(code)))));
+      return held.length ? held.map((item) => `${item.code} · ${item.name}`).join(', ') : `해당 업종 없음 · 보유 업종 ${company.industries.length}개`;
+    }
     case 'REGION': return company.region_name ?? company.region_code ?? '비어 있음';
     case 'COMPANY_SIZE': return company.company_size;
     case 'STAFF': return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
@@ -156,7 +173,17 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
       const max = Math.max(0, ...company.performances.map((item) => item.amount));
       return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : '비어 있음';
     }
-    case 'REGISTRATION_CERTIFICATION': return company.certifications.length ? company.certifications.map((item) => item.name).join(', ') : '비어 있음';
+    case 'REGISTRATION_CERTIFICATION': {
+      // 같은 이유로, 이 요건과 이름(또는 번호)이 맞는 등록·인증만 보여 준다.
+      if (!company.certifications.length) return '비어 있음';
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '').toLowerCase();
+      const wanted = loose(`${requirement.value ?? ''}`);
+      const held = company.certifications.filter((item) => {
+        const name = loose(item.name), code = loose(item.certificate_number ?? '');
+        return Boolean(wanted) && (name.includes(wanted) || wanted.includes(name) || (code !== '' && code === wanted));
+      });
+      return held.length ? held.map((item) => item.name).join(', ') : `일치하는 등록·인증 없음 · 보유 ${company.certifications.length}건`;
+    }
     case 'EXPERIENCE_FIELD': {
       const fields = [...new Set(company.performances.flatMap((item) => item.fields))];
       return fields.length ? fields.join(', ') : '비어 있음';
@@ -172,6 +199,59 @@ function canReuseAnalysis(summary: QualificationAnalysisSummary | null) {
 export default function QualificationPage() {
   const requestedCaseId = useSearchParams().get('caseId');
   return <QualificationWorkspace key={requestedCaseId} requestedCaseId={requestedCaseId} />;
+}
+
+const CASES_PER_PAGE = 9;
+
+/** 검토 중인 공고를 3×3 카드로 보여 주고, 아홉 건을 넘으면 다음 쪽으로 넘긴다. */
+function CaseGrid({ cases }: { cases: PreflightCase[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(cases.length / CASES_PER_PAGE));
+  const current = Math.min(page, pageCount - 1);
+  const shown = cases.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
+  return (
+    <main className="bg-white text-[var(--product-body)]">
+      <div className="app-shell-container py-10">
+        {/* 머리 상자: 흰 바탕에 얇은 파란 테두리(2026-10-12). 회사 프로필의 파란 상자와 달리 채우지 않는다. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
+          <div>
+            <h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">검토 중인 공고 {cases.length}건</h2>
+            <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
+          </div>
+          <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
+        </div>
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="검토 중인 공고">
+          {shown.map((item) => {
+            const changed = item.baseline_version_number != null && item.baseline_version_number !== item.current_version_number;
+            return (
+              <li key={item.id}>
+                <NavigationLink
+                  href={`/qualification?caseId=${encodeURIComponent(item.id)}`}
+                  className="flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border border-[var(--product-line)] bg-white p-5 transition-colors hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]"
+                >
+                  <span className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)]">
+                    <span className="font-semibold tabular-nums">{item.bid_notice_no}</span>
+                    {changed
+                      ? <span className="rounded-full bg-[#1c348f] px-2 py-0.5 text-[12px] font-bold text-white">변경공고 v{item.baseline_version_number} → v{item.current_version_number}</span>
+                      : <span className="rounded-full border border-[var(--product-line)] px-2 py-0.5 text-[12px] font-semibold">v{item.current_version_number}</span>}
+                  </span>
+                  <strong className="line-clamp-2 text-[17px] leading-6 text-[var(--product-ink)]">{item.notice_title || item.title}</strong>
+                  <span className="mt-auto text-[13px] text-[var(--product-muted)]">최근 변경 {new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}</span>
+                </NavigationLink>
+              </li>
+            );
+          })}
+        </ul>
+        {pageCount > 1 && (
+          <nav className="mt-6 flex items-center justify-center gap-3" aria-label="검토 건 쪽 이동">
+            <Button variant="outline" onClick={() => setPage(current - 1)} disabled={current === 0}>이전</Button>
+            <span className="text-[14px] tabular-nums text-[var(--product-muted)]" aria-live="polite">{current + 1} / {pageCount}</span>
+            <Button variant="outline" onClick={() => setPage(current + 1)} disabled={current >= pageCount - 1}>다음</Button>
+          </nav>
+        )}
+      </div>
+    </main>
+  );
 }
 
 function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string | null }) {
@@ -346,10 +426,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const caseResult = await listPreflightCases();
       if (request !== generation.current) return;
       setCases(caseResult.items);
-      if (caseResult.items[0]) {
+      if (caseResult.items.length === 1) {
         router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
         return;
       }
+      // 여럿이면 어느 것을 열지 사용자가 카드 목록에서 고른다(CaseGrid).
+      if (caseResult.items.length > 1) return;
       // Fetch the creation form's options only when the user has no case to open.
       const [noticeResult, companyResult] = await Promise.all([listNotices(), listCompanies()]);
       if (request !== generation.current) return;
@@ -519,6 +601,39 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     않았을 뿐이라 충족된 것이 아니다. 왜 빠졌는지(공고가 조건을 뺐는지, 분석이 놓쳤는지)를 가르는 건
     원문을 나란히 놓는 변경 이력의 일이라, 여기서는 사실만 알리고 그쪽으로 보낸다.
   */
+  /*
+    변경공고라면 무엇이 달라졌는지가 이 화면에서 가장 먼저 볼 내용이다(2026-10-12). 판정 요약보다 위에 둔다.
+    공고 값(마감·금액·계약방법)은 수집한 두 차수를 그대로 비교하고, 자격 요건은 저장된 두 분석을 비교한다.
+    요건의 추가·삭제는 공고가 바꾼 것일 수도, 분석이 다르게 읽은 것일 수도 있어 단정하지 않는다 — 원문을 나란히
+    보는 일은 변경 이력 화면에 맡긴다.
+  */
+  const changeDigest = useMemo(() => {
+    if (!baselineVersion || !currentVersion || baselineVersion.id === currentVersion.id) return null;
+    const fields = [
+      { label: '입찰서 제출마감', before: changeDate(baselineVersion.bid_closed_at), after: changeDate(currentVersion.bid_closed_at) },
+      { label: '추정가격', before: changeMoney(baselineVersion.estimated_price), after: changeMoney(currentVersion.estimated_price) },
+      { label: '배정예산', before: changeMoney(baselineVersion.allocated_budget), after: changeMoney(currentVersion.allocated_budget) },
+      { label: '계약방법', before: baselineVersion.contract_method ?? '-', after: currentVersion.contract_method ?? '-' },
+    ].filter((row) => row.before !== row.after);
+    const compared = Boolean(baselineAnalysisDetail && analysisDetail);
+    const requirements = compared
+      ? diffCanonicalRequirements(baselineAnalysisDetail!.requirements, analysisDetail!.requirements)
+        .filter((item) => item.change_type !== 'UNCHANGED')
+        .map((item) => ({
+          key: item.identity,
+          changeType: item.change_type,
+          typeLabel: REQUIREMENT_TYPE_LABEL[(item.current ?? item.baseline)?.type ?? ''] ?? (item.current ?? item.baseline)?.type ?? '요건',
+          before: compactRaw(item.baseline?.raw),
+          after: compactRaw(item.current?.raw),
+          // 구조화된 값이 같으면 글머리 기호나 법령 인용처럼 원문 표현만 달라진 것이다.
+          wordingOnly: Boolean(item.baseline && item.current && sameStructuredRequirement(item.baseline, item.current)),
+        }))
+        // 값이 실제로 달라진 것을 먼저 보여 준다.
+        .sort((a, b) => Number(a.wordingOnly) - Number(b.wordingOnly))
+      : [];
+    return { fields, requirements, compared };
+  }, [baselineVersion, currentVersion, baselineAnalysisDetail, analysisDetail]);
+
   const versionRequirementGap = useMemo(() => {
     if (!canViewBaseline || !baselineAnalysisDetail || !analysisDetail) return null;
     // requirement_key는 차수마다 새로 만들어져서 같은 요건이라도 값이 달라진다.
@@ -803,7 +918,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCaseId}` : evidenceHref); } : undefined} />;
   };
 
-  if (busy === 'load' || (!requestedCaseId && cases.length > 0 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
+  if (busy === 'load' || (!requestedCaseId && cases.length === 1 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
     {requestedCaseId && <ActionCard caseId={requestedCaseId} />}
     <output className="block space-y-5" aria-label="?? ???? ???? ????">
       <div className="h-10 w-64 animate-pulse rounded-xl bg-slate-200" />
@@ -813,6 +928,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
     </output>
   </main>;
+  if (!requestedCaseId && cases.length > 1) return <CaseGrid cases={cases} />;
   if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12">
     <ActionCard caseId={requestedCaseId} />
     <p role="alert">{error || '검토 건을 찾을 수 없습니다.'}</p>
@@ -824,9 +940,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const caseHeader = activeCase ? (
       <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
-        {/* 검토 건 이동은 화면 맨 아래 카드에 있어서 아무도 못 찾았다. 제목 옆으로 올린다. */}
+        {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
         <div className="flex flex-wrap items-center gap-2">
-          <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
+          {cases.length > 1 && <NavigationLink href="/qualification" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
           <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
         </div>
@@ -865,6 +981,52 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {/* ── 1 공고 · 검토 건 ── */}
             {caseHeader}
             <CaseTabs caseId={activeCase.id} active="qualification" />
+
+            {/* ── 1-0 변경공고에서 달라진 것: 변경공고라면 가장 먼저 보여 준다 ── */}
+            {changeDigest && (
+              <section aria-labelledby="change-digest-title" className="mt-6 rounded-[20px] border border-[#1c348f] bg-[#f3f6ff] px-6 py-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 id="change-digest-title" className="text-[19px] font-extrabold tracking-[-0.02em] text-[#1c348f]">
+                    변경공고에서 달라진 것
+                    <span className="ml-2 text-[14px] font-semibold text-[var(--product-muted)]">기준 v{activeCase.baseline_version_number} → 현재 v{activeCase.current_version_number}</span>
+                  </h2>
+                  <NavigationLink href={`/changes?caseId=${activeCase.id}`} className="text-[14px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">변경 이력에서 원문 나란히 보기</NavigationLink>
+                </div>
+                {changeDigest.fields.length === 0 && changeDigest.requirements.length === 0 ? (
+                  <p className="mt-3 text-[15px] leading-6">
+                    {changeDigest.compared
+                      ? '주요 공고 값(마감·금액·계약방법)과 자격 요건에서 달라진 것을 찾지 못했습니다.'
+                      : '주요 공고 값(마감·금액·계약방법)은 달라지지 않았습니다. 자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.'}
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-[#d9e0f7]">
+                    {changeDigest.fields.map((row) => (
+                      <li key={row.label} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5 text-[15px]">
+                        <span className="rounded-full bg-[#1c348f] px-2.5 py-0.5 text-[12px] font-bold text-white">공고 값</span>
+                        <strong className="min-w-[110px]">{row.label}</strong>
+                        <span className="text-[var(--product-muted)] line-through">{row.before}</span>
+                        <span aria-hidden>→</span>
+                        <strong>{row.after}</strong>
+                      </li>
+                    ))}
+                    {changeDigest.requirements.slice(0, 6).map((row) => (
+                      <li key={row.key} className="py-2.5 text-[15px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[row.changeType]}</span>
+                          <strong>{row.typeLabel}</strong>
+                          {row.wordingOnly && <span className="text-[13px] text-[var(--product-muted)]">조건 값은 같고 원문 표현만 다름</span>}
+                        </div>
+                        {row.before && <p className={`mt-1 leading-6 ${row.after ? 'text-[var(--product-muted)] line-through' : 'text-[var(--product-muted)]'}`}>{row.after ? '' : '기준 차수: '}{row.before}</p>}
+                        {row.after && <p className="mt-0.5 leading-6">{row.before ? '→ ' : '현재 차수: '}{row.after}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {changeDigest.requirements.length > 6 && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건 변화 {changeDigest.requirements.length}건 중 6건만 보여 줍니다. 나머지는 변경 이력에서 확인해 주세요.</p>}
+                {changeDigest.requirements.length > 0 && <p className="mt-2 text-[13px] leading-5 text-[var(--product-muted)]">신설·삭제로 표시된 요건은 공고가 바꾼 것일 수도, 분석이 차수마다 다르게 읽은 것일 수도 있습니다. 원문으로 확인해 주세요.</p>}
+                {!changeDigest.compared && (changeDigest.fields.length > 0) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.</p>}
+              </section>
+            )}
 
             {/* ── 1-1 어느 차수 기준으로 보는가 ── */}
             {canViewBaseline && (

@@ -100,12 +100,10 @@ test('guide uses a single shared title band and keeps complete content', async (
   await expect(page.locator('.app-title-band h1')).toHaveText('이용안내');
 });
 
-test('title bands share qualification spacing across four product pages', async ({ page }) => {
+test('title bands share spacing on the pages that keep them, and case pages start without one', async ({ page }) => {
   await mockApi(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const pages = [
-    ['/qualification', '참가자격 검토', '판정한 모든 항목에 공고 원문 근거를 함께 표시합니다.', '홈 › 내 입찰 건 › 참가자격 검토'],
-    ['/company', '회사 프로필', '공고 판정에 사용하는 회사 값을 출처와 함께 관리합니다.', '홈 › 회사 프로필'],
     ['/recommendations', 'AI 추천', '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.', '홈 › 공고 추천'],
     ['/guide', '이용안내', '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.', '홈 › 이용안내'],
   ];
@@ -125,6 +123,11 @@ test('title bands share qualification spacing across four product pages', async 
     }));
   }
   for (const position of positions.slice(1)) expect(position).toEqual(positions[0]);
+  // 내 입찰 건과 회사 프로필은 제목 띠 없이 내용으로 바로 시작한다.
+  for (const route of ['/qualification', '/company']) {
+    await page.goto(route);
+    await expect(page.locator('.app-title-band')).toHaveCount(0);
+  }
 });
 
 test('qualification navigation opens latest case before the slow analysis results and skips unused notice list', async ({ page }) => {

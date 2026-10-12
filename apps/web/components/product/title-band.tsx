@@ -12,12 +12,12 @@ export function TitleBand({ title, description, breadcrumb, variant = 'default' 
     <section className={`app-title-band ${variant === 'tall' ? 'app-title-band-tall' : ''}`}>
       <PageContainer className="flex h-full items-end justify-between gap-8 pb-[34px]">
         <div className="flex min-w-0 flex-1 flex-col items-start gap-[9px]">
-          <h1 className="text-[29px] font-extrabold leading-[44px] tracking-[-0.04em] text-[var(--product-ink)]">
+          <h1 className="text-[29px] font-extrabold leading-[44px] tracking-[-0.04em] text-white">
             {title}
           </h1>
-          <p className="text-[14px] leading-[21px] text-[var(--product-muted)]">{description}</p>
+          <p className="text-[14px] leading-[21px] text-white/80">{description}</p>
         </div>
-        <p className="hidden shrink-0 pb-[2px] text-[12.5px] leading-[19px] text-[var(--product-muted)] md:block">
+        <p className="hidden shrink-0 pb-[2px] text-[12.5px] leading-[19px] text-white/75 md:block">
           {breadcrumb}
         </p>
       </PageContainer>

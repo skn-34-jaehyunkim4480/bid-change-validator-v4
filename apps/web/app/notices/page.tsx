@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { sharedQueryClient } from '@/lib/shared-query-cache';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -123,11 +123,20 @@ export default function NoticesPage() {
     }
   }
 
+  // 상단 메뉴 바의 검색(?q=)으로 들어오면 그 낱말로 첫 쪽부터 찾는다. 없으면 직전에 보던 목록을 잇는다.
+  const requestedQuery = useSearchParams().get('q');
   useEffect(() => {
     const saved = previousNotices();
-    const timer = window.setTimeout(() => void initialize(saved?.query ?? '', saved?.page ?? 0, saved?.businessType ?? 'all', saved?.status ?? 'all'), 0);
+    const timer = window.setTimeout(() => {
+      if (requestedQuery != null) {
+        setQuery(requestedQuery);
+        void initialize(requestedQuery, 0, 'all', 'all');
+      } else {
+        void initialize(saved?.query ?? '', saved?.page ?? 0, saved?.businessType ?? 'all', saved?.status ?? 'all');
+      }
+    }, 0);
     return () => { window.clearTimeout(timer); searchGeneration.current += 1; };
-  }, []);
+  }, [requestedQuery]);
 
   function noticeStatus(noticeId: string): OverallStatus {
     return (notices.find((notice) => notice.id === noticeId)?.qualification_status ?? 'unreviewed') as OverallStatus;
@@ -246,7 +255,7 @@ export default function NoticesPage() {
                 ))}
               </div>
               {/* 「근거 없으면 판정하지 않는다」는 이 제품의 약속이라 한 줄로 남긴다. */}
-              <span className="flex items-center gap-2 text-[13px] text-white/75"><ShieldCheck className="size-4" />근거가 없으면 판정하지 않고 「확인 필요」로 남깁니다</span>
+              <span className="flex items-center gap-2 text-[13px] text-white/75"><ShieldCheck className="size-4" />근거가 없으면 판정하지 않습니다</span>
             </div>
           </form>
         </div>

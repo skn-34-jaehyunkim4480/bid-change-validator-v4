@@ -56,6 +56,15 @@ class CopilotChatRequest(BaseModel):
     history: list[FreeChatTurn] = Field(default_factory=list, max_length=8)
 
 
+class GeneralChatRequest(BaseModel):
+    """공고에 매이지 않은 일반 도우미에게 묻는다(free_chat.answer_general_question)."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[FreeChatTurn] = Field(default_factory=list, max_length=8)
+    # 담당자가 열어 둔 화면의 이름("공고 찾기", "회사 프로필"). 화면의 내용은 받지 않는다.
+    page: str | None = Field(default=None, max_length=60)
+
+
 class ProductSource(BaseModel):
     source_origin: Literal["PRODUCT_EVIDENCE"] = "PRODUCT_EVIDENCE"
     ref: str

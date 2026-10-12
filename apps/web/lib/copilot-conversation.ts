@@ -6,17 +6,25 @@ import type { CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot
 export type Turn = { id: number; question: string; response?: CopilotChatResponse; free?: boolean };
 export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext; conversationId?: string; serverRevision?: number; targetId?: string };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
-type ConversationRequest = CopilotTransportRequest;
+type ConversationRequest = CopilotTransportRequest & { general_page?: string };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
 export type GuidedSelection = { jobId: string; questionId: string };
 type FailedRead = { request: ConversationRequest; turnId: number };
 
+/** 공고에 매이지 않은 일반 도우미 대화의 자리. 대화 저장소에서는 검토 건 id 자리에 이 값을 쓴다. */
+export const GENERAL_CONVERSATION_ID = 'general';
+
 async function sendConversationMessage(request: ConversationRequest): Promise<CopilotChatResponse> {
-  const { body, headers } = buildCopilotTransport(request);
+  const general = request.case_id === GENERAL_CONVERSATION_ID;
+  const { body, headers } = general
+    // 일반 도우미에는 질문·대화·화면 이름만 보낸다. 공고도 회사 정보도 싣지 않는다.
+    ? { body: { message: request.message, history: request.history ?? [], page: request.general_page },
+        headers: { 'Content-Type': 'application/json', ...(request.semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}) } }
+    : buildCopilotTransport(request);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 70000);
   try {
-    const response = await apiFetch('/api/v1/copilot/chat', {
+    const response = await apiFetch(general ? '/api/v1/copilot/general-chat' : '/api/v1/copilot/chat', {
       method: 'POST',
       signal: controller.signal,
       headers,
@@ -158,6 +166,33 @@ export class ConversationStore {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
     this.listeners.forEach(fn => fn());
   }
+  /** 대화가 있는 검토 건의 id. 대화 목록(전용 화면의 왼쪽)이 쓴다. */
+  caseIds(): string[] {
+    return [...this.states.entries()].filter(([, state]) => state.turns.length > 0).map(([caseId]) => caseId);
+  }
+  /**
+   * 이 브라우저에 남길 모양. 답이 온 턴만 남기고, 서버가 메모리에 들고 있던 대화 식별자는 뺀다 —
+   * 새로고침이나 서버 재시작 뒤에는 그 식별자가 가리키는 대화가 없을 수 있다.
+   */
+  serialize(): Record<string, Pick<Conversation, 'turns' | 'revision'>> {
+    const out: Record<string, Pick<Conversation, 'turns' | 'revision'>> = {};
+    for (const [caseId, state] of this.states) {
+      const turns = state.turns.filter(turn => turn.response);
+      if (turns.length) out[caseId] = { turns: structuredClone(turns), revision: state.revision };
+    }
+    return out;
+  }
+  /** serialize 로 남긴 것을 되살린다. 이미 대화가 있는 검토 건은 건드리지 않는다. */
+  hydrate(saved: unknown) {
+    if (!saved || typeof saved !== 'object') return;
+    for (const [caseId, value] of Object.entries(saved as Record<string, unknown>)) {
+      const turns = (value as { turns?: unknown } | null)?.turns;
+      if (!Array.isArray(turns) || !turns.length || this.states.get(caseId)?.turns.length) continue;
+      const revision = Number((value as { revision?: unknown }).revision) || turns.length;
+      this.states.set(caseId, { ...empty(), turns: structuredClone(turns) as Turn[], revision });
+    }
+    this.listeners.forEach(fn => fn());
+  }
   snapshot(caseId: string): Conversation | null {
     const state = this.get(caseId);
     return state.busy ? null : structuredClone(state);
@@ -240,6 +275,19 @@ export class ConversationStore {
           last_response_intent: old.turns.at(-1)?.response?.intent },
       };
     await this.perform(caseId, request, revision);
+  }
+  /** 일반 도우미에게 묻는다. screen 은 담당자가 열어 둔 화면의 이름이다(내용은 보내지 않는다). */
+  async askGeneral(question: string, screen: string | undefined, semanticProcessing: boolean) {
+    const caseId = GENERAL_CONVERSATION_ID;
+    const old = this.get(caseId);
+    if (old.busy || !question.trim()) return;
+    const revision = old.revision + 1;
+    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question, free: true }] });
+    await this.perform(caseId, {
+      case_id: caseId, message: question, free_chat: true, general_page: screen,
+      history: old.turns.filter(turn => turn.response?.answer).slice(-4).map(turn => ({ question: turn.question, answer: turn.response!.answer })),
+      semantic_processing: semanticProcessing || undefined,
+    }, revision);
   }
   private async perform(caseId: string, request: ConversationRequest, revision: number) {
     try {
