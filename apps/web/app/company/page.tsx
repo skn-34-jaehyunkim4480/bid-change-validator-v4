@@ -408,7 +408,6 @@ export default function CompanyPage() {
               <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                 <div>
                   <h1 className="text-[28px] font-extrabold tracking-[-0.035em]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
-                  <p className="mt-2 text-[14px] text-[var(--product-muted)]">비어 있는 값은 미달로 만들지 않고 확인 필요로 남깁니다.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{company.name}</Badge>

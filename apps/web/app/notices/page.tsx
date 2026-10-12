@@ -255,7 +255,7 @@ export default function NoticesPage() {
                 ))}
               </div>
               {/* 「근거 없으면 판정하지 않는다」는 이 제품의 약속이라 한 줄로 남긴다. */}
-              <span className="flex items-center gap-2 text-[13px] text-white/75"><ShieldCheck className="size-4" />근거가 없으면 판정하지 않고 「확인 필요」로 남깁니다</span>
+              <span className="flex items-center gap-2 text-[13px] text-white/75"><ShieldCheck className="size-4" />근거가 없으면 판정하지 않습니다</span>
             </div>
           </form>
         </div>
