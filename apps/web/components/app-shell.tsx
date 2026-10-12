@@ -58,6 +58,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       description: '판정한 모든 항목에 공고 원문 근거를 함께 표시합니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토',
       variant: 'tall',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -67,6 +69,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '확인 필요에 답하기',
       description: '이유가 셋이고, 이유마다 하실 일이 다릅니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 확인 필요',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -76,6 +80,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '근거 원문 대조',
       description: '왼쪽은 공고 원문, 오른쪽은 그 원문으로 내린 판정입니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 근거 대조',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -86,6 +92,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '평가 대응',
       description: '배점 원문과 회사 프로필의 대응값을 나란히 확인합니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 평가 대응',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -95,6 +103,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '변경 이력',
       description: '공고가 바뀐 곳과, 그 때문에 다시 판정한 항목을 보여줍니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 변경 이력',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -124,6 +134,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '회사 프로필',
       description: '공고 판정에 사용하는 회사 값을 출처와 함께 관리합니다.',
       breadcrumb: '홈 › 회사 프로필',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
 ];
