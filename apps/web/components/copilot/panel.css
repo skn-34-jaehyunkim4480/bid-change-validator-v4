@@ -134,3 +134,9 @@
 
 /* 좁은 창(1024px 미만)에서도 패널을 넉넉하게: 폭 400 → 480, 높이 720 → 820. */
 @media(max-width:1023px){.copilot-panel{width:min(480px,100vw);height:min(820px,95dvh)}}
+
+/* 머리의 배지(조회 차수, 판정)는 한 줄에 둔다. 접히면 '핵심 요건 / 충족' 처럼 두 줄이 됐다. 자리가 모자라면 차수 배지부터 줄인다. */
+.copilot-header-badges{flex-wrap:nowrap;min-width:0}
+.copilot-badge{flex:none;white-space:nowrap}
+.copilot-header-badges .copilot-badge:first-child:not(:only-child){flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.copilot-new-conversation{white-space:nowrap}

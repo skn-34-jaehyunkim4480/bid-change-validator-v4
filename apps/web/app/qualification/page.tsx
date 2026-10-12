@@ -155,7 +155,15 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
   if (judgment?.basis_type === 'USER_ANSWER') return '사용자 답변으로 판정 · 회사 프로필에는 반영하지 않음';
   if (!company) return '회사 프로필 없음';
   switch (requirement.type) {
-    case 'INDUSTRY': return company.industries.length ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ') : '비어 있음';
+    case 'INDUSTRY': {
+      // 회사의 업종을 전부 늘어놓지 않는다 — 이 요건이 묻는 업종만 보여 준다(같이 요구한 코드, 대신 인정되는 상위 면허 포함).
+      if (!company.industries.length) return '비어 있음';
+      const scopeCodes = (key: string) => (Array.isArray(requirement.scope[key]) ? requirement.scope[key] as unknown[] : []).map((code) => `${code as string}`);
+      const wanted = [`${requirement.value ?? ''}`, ...scopeCodes('with_codes'), ...scopeCodes('accepted_by')].filter(Boolean);
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '');
+      const held = company.industries.filter((item) => wanted.some((code) => code === item.code || (!/^\d{4}$/.test(code) && loose(item.name).includes(loose(code)))));
+      return held.length ? held.map((item) => `${item.code} · ${item.name}`).join(', ') : `해당 업종 없음 · 보유 업종 ${company.industries.length}개`;
+    }
     case 'REGION': return company.region_name ?? company.region_code ?? '비어 있음';
     case 'COMPANY_SIZE': return company.company_size;
     case 'STAFF': return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
@@ -165,7 +173,17 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
       const max = Math.max(0, ...company.performances.map((item) => item.amount));
       return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : '비어 있음';
     }
-    case 'REGISTRATION_CERTIFICATION': return company.certifications.length ? company.certifications.map((item) => item.name).join(', ') : '비어 있음';
+    case 'REGISTRATION_CERTIFICATION': {
+      // 같은 이유로, 이 요건과 이름(또는 번호)이 맞는 등록·인증만 보여 준다.
+      if (!company.certifications.length) return '비어 있음';
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '').toLowerCase();
+      const wanted = loose(`${requirement.value ?? ''}`);
+      const held = company.certifications.filter((item) => {
+        const name = loose(item.name), code = loose(item.certificate_number ?? '');
+        return Boolean(wanted) && (name.includes(wanted) || wanted.includes(name) || (code !== '' && code === wanted));
+      });
+      return held.length ? held.map((item) => item.name).join(', ') : `일치하는 등록·인증 없음 · 보유 ${company.certifications.length}건`;
+    }
     case 'EXPERIENCE_FIELD': {
       const fields = [...new Set(company.performances.flatMap((item) => item.fields))];
       return fields.length ? fields.join(', ') : '비어 있음';
