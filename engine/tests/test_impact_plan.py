@@ -99,3 +99,28 @@ def test_removed_or_branch_invalidates_surviving_member():
     after = [req("A", "v2", "1169", group="G")]
     actions = {x.current_key or x.baseline_key: x.action for x in plan(before, after)}
     assert actions == {"A": "RECALCULATE", "B": "RETIRE"}
+
+def test_splitting_any_of_group_recalculates_all_previous_members():
+    before = [req("A", "v1", "1169", group="G"), req("B", "v1", "1170", group="G")]
+    after = [req("A", "v2", "1169", group="G-A"), req("B", "v2", "1170", group="G-B")]
+    actions = {item.current_key: item.action for item in plan(before, after)}
+    assert actions == {"A": "RECALCULATE", "B": "RECALCULATE"}
+
+
+def test_group_identity_only_rename_preserves_reuse():
+    before = [req("A", "v1", "1169", group="OLD"), req("B", "v1", "1170", group="OLD")]
+    after = [req("A", "v2", "1169", group="NEW"), req("B", "v2", "1170", group="NEW")]
+    assert [item.action for item in plan(before, after)] == ["REUSE", "REUSE"]
+
+
+def test_redistributing_any_of_members_recalculates_all_affected_groups():
+    before = [req("A", "v1", "1169", group="G1"), req("B", "v1", "1170", group="G1"),
+              req("C", "v1", "1180", group="G2"), req("D", "v1", "1190", group="G2")]
+    after = [req("A", "v2", "1169", group="G1"), req("B", "v2", "1170", group="G2"),
+             req("C", "v2", "1180", group="G1"), req("D", "v2", "1190", group="G2")]
+    assert {item.action for item in plan(before, after)} == {"RECALCULATE"}
+
+def test_same_source_regrouping_needs_review_not_recalculation():
+    before = [req("A", "v1", "1169", group="G"), req("B", "v1", "1170", group="G")]
+    after = [req("A", "v2", "1169", group="G-A"), req("B", "v2", "1170", group="G-B")]
+    assert {item.action for item in plan(before, after, old_doc="same", new_doc="same")} == {"REVIEW"}
