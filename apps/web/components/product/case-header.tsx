@@ -11,7 +11,7 @@ export function CaseHeader({ workspace }: { workspace: CaseWorkspace }) {
   const unknown = displayJudgment?.judgments.filter((item) => item.status === 'UNKNOWN').length ?? 0;
 
   return (
-    <section className="product-hero flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+    <section className="flex flex-col justify-between gap-5 border-b border-[var(--product-line)] pb-[26px] lg:flex-row lg:items-start">
       <div className="min-w-0">
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary">{notice.latest.contract_method ?? '계약방법 미상'}</Badge>

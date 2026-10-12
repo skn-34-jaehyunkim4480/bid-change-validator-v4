@@ -194,10 +194,11 @@ function CaseGrid({ cases }: { cases: PreflightCase[] }) {
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        {/* 머리 상자: 흰 바탕에 얇은 파란 테두리(2026-10-12). 회사 프로필의 파란 상자와 달리 채우지 않는다. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
           <div>
-            <h2 className="text-[24px] font-extrabold tracking-[-0.03em]">검토 중인 공고 <span className="text-[var(--product-muted)]">{cases.length}건</span></h2>
-            <p className="mt-1 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
+            <h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">검토 중인 공고 {cases.length}건</h2>
+            <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
           </div>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
         </div>
@@ -919,7 +920,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
   // Display verified notice metadata immediately; never render a provisional decision.
   const caseHeader = activeCase ? (
-      <section className="product-hero flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+      <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
         {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
         <div className="flex flex-wrap items-center gap-2">
