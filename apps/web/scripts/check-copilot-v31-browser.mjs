@@ -95,23 +95,32 @@ if (!chromium) throw Error('Playwright chromium export not found');
     await page.locator('[data-copilot-version="3.1"] .copilot-evidence-toggle').first().click();
     assert(await page.locator('[data-copilot-version="3.1"] blockquote').first().isVisible());
     assert(await page.getByRole('button', { name: '추천 질문 6개 보기', exact: true }).isVisible());
+    // 입력창과 서류 질문은 사용 전 안내를 확인하기 전에는 잠겨 있다 — 확인 없이는 모델로 가는 요청이 나갈 수 없다.
+    assert.equal(await page.locator('#copilot-question').isDisabled(), true, 'Free text must stay locked until the notice is acknowledged');
+    if (!(await page.locator('.copilot-jobs-list').count())) await page.getByRole('button', { name: '추천 질문 6개 보기', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: '1. 필요한 서류·기한·방법은?', exact: true }).isDisabled(), true,
+      'Document questions must stay locked until the notice is acknowledged');
+    assert.equal(requests.length, 1, 'Nothing may be sent while the input is locked');
+    await page.locator('#copilot-semantic-processing').click();
+    await page.locator('#copilot-semantic-processing').waitFor({ state: 'detached' });
     await page.locator('#copilot-question').fill('1224와 1227은 무슨 차이야?');
     await page.locator('#copilot-question').press('Enter');
-    await page.waitForFunction(() => document.querySelectorAll('[data-copilot-version="3.1"]').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('[data-copilot-version="3.1"]').length >= 2);
     assert.equal(requests[1].response_version, '3.1');
     assert.equal(requests[1].message, '1224와 1227은 무슨 차이야?');
     assert.equal(requests[1].job_id, undefined, 'Free text must not impersonate a guided question');
     assert.equal(requests[1].question_id, undefined, 'Free text must not impersonate a guided question');
-    assert.equal(semanticHeaders[1], undefined, 'Free text must preserve semantic opt-out');
+    assert.equal(requests[1].free_chat, true, 'Typed questions take the free chat path');
+    assert.equal(semanticHeaders[1], 'true', 'Acknowledged free text carries the consent header');
+    assert.equal(requests[1].allow_external_processing, true, 'Acknowledged free text reads the public notice documents');
     assert.equal(requests[1].conversation_id, envelope.conversation_id);
     assert.equal(requests[1].context_revision, 1);
-    assert.equal(requests[1].allow_external_processing, undefined, 'Free text must not silently enable document processing');
     await page.locator('#copilot-panel').screenshot({ path: process.env.COPILOT_SCREENSHOT_FILE });
     await page.getByRole('button', { name: '새 대화', exact: true }).click();
     assert.equal(await page.locator('[data-copilot-version="3.1"]').count(), 0);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ status: 'PASS', chat_requests: requests.length, case_id: s.case_id,
-      semantic_opt_in: false, page_errors: errors, blocked_external_requests: outbound.length,
+      semantic_opt_in: 'guided question without consent, free text after acknowledgement', page_errors: errors, blocked_external_requests: outbound.length,
       scope: 'actual panel with mock API; no live DB/model' }));
   } catch (error) {
     await page.screenshot({ path: process.env.COPILOT_SCREENSHOT_FILE });

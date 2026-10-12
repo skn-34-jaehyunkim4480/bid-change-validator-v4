@@ -208,11 +208,17 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const ask = (text: string, intent?: CopilotIntent, guided?: { jobId: string; questionId: string }, free = false) => {
     if (!caseId || state.busy || !text.trim()) return;
     setJobsOpen({ page, open: false });
-    void store.ask(caseId, text.trim(), intent, page, semanticProcessing, documentProcessing, guided, free);
+    void store.ask(caseId, text.trim(), intent, page, semanticProcessing, free ? documentProcessing : false, guided, free);
   };
-  // 추천 질문도 입력창 질문과 같은 길(자유 대화)로 답한다. 예전 안내형 경로는 공고문을 읽으면 입력 한도를 넘겨
-  // "공고문 근거가 너무 많아 답변을 생성하지 못했습니다" 로 끝났고, 로그인도 요구했다(2026-10-12).
-  const askRecommended = (group: string, label: string) => ask(`${group}: ${label}`, undefined, undefined, true);
+  // 추천 질문의 두 묶음은 답하는 길이 다르다(2026-10-12).
+  //   변경 공고 대응 — 안내형 경로 그대로. 변경 카드·확인 항목·답변 입력 버튼을 그 경로가 만든다. 공고문은 싣지 않는다.
+  //   입찰 참여 준비 — 공고문을 읽어야 답할 수 있는 질문이라 입력창 질문과 같은 자유 대화로 보낸다. 안내형 경로는
+  //                    공고문을 실으면 입력 한도를 넘겨 "공고문 근거가 너무 많아 답변을 생성하지 못했습니다" 로 끝났다.
+  const readsDocuments = (jobId: string) => jobId === 'bid_preparation';
+  const askRecommended = (job: { job_id: string; label: string }, item: { question_id: string; label: string }) => {
+    if (readsDocuments(job.job_id)) ask(`${job.label}: ${item.label}`, undefined, undefined, true);
+    else ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id });
+  };
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>
@@ -244,9 +250,9 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
             <h4>{job.label}</h4>
             <ol>{job.questions.map(item => <li key={item.question_id}>
               <Button type="button" variant="ghost" className="copilot-quiet"
-                disabled={state.busy || item.availability === 'BLOCKED' || !semanticProcessing}
+                disabled={state.busy || item.availability === 'BLOCKED' || (readsDocuments(job.job_id) && !semanticProcessing)}
                 title={item.unavailable_reason ?? item.answer_scope}
-                onClick={() => { store.focus(caseId, null); askRecommended(job.label, item.label); }}>
+                onClick={() => { store.focus(caseId, null); askRecommended(job, item); }}>
                 {item.order}. {item.label}
               </Button>
               {item.unavailable_reason && !sharedReason && <small>{item.unavailable_reason}</small>}
@@ -273,7 +279,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
             {followUps.length > 0 && <div className="copilot-followups" aria-label="관련 후속 질문">
               <strong>이어서 확인하기</strong>
               {followUps.map(item => <Button type="button" variant="outline" className="copilot-quiet" key={item.question_id}
-                disabled={state.busy} onClick={() => askRecommended(job!.label, item.label)}>
+                disabled={state.busy} onClick={() => askRecommended(job!, item)}>
                 {item.label}
               </Button>)}
             </div>}
