@@ -1,0 +1,51 @@
+﻿id|name|domain|requirement|forms
+bid-registration|입찰참가자격등록|registration|REGISTRATION_CERTIFICATION|입찰참가자격 등록;입찰참가 등록;나라장터 등록
+bid-eligibility|입찰참가자격|qualification||입찰 참가자격;견적제출 참가자격
+business-license|사업자등록증|registration|REGISTRATION_CERTIFICATION|사업자 등록증;사업자등록증명
+industry-code|업종코드|industry|INDUSTRY|업종 코드
+industry-license|업종등록|industry|INDUSTRY|업종 등록;업종면허
+business-permit|영업허가|registration|REGISTRATION_CERTIFICATION|영업 허가;영업신고
+professional-license|면허|registration|REGISTRATION_CERTIFICATION|면허증
+registration|등록|registration|REGISTRATION_CERTIFICATION|등록증
+certification|인증|registration|REGISTRATION_CERTIFICATION|인증서
+direct-production|직접생산확인증명서|certification|REGISTRATION_CERTIFICATION|직접생산확인 증명서;직접생산확인서
+sm-business|중소기업|company_size|COMPANY_SIZE|중소기업 확인서;중소기업확인서
+small-business|소기업|company_size|COMPANY_SIZE|소기업확인서;소기업 확인서
+micro-business|소상공인|company_size|COMPANY_SIZE|소상공인확인서;소상공인 확인서
+mid-business|중견기업|company_size|COMPANY_SIZE|중견기업 확인서
+hq-location|본점 소재지|region|REGION|본점소재지;법인등기부상 본점소재지
+business-location|사업장 소재지|region|REGION|사업장소재지;사업장 주소
+regional-restriction|지역제한|region|REGION|지역 제한;지역제한경쟁
+notice-day|공고일|temporal||입찰공고일;입찰 공고일
+day-before|공고일 전일|temporal|REGION|공고일 전일부터;입찰공고일 전일
+bid-deadline|입찰서 제출마감일|temporal||입찰서 제출 마감일;입찰마감일;투찰마감일
+contract-date|계약체결일|temporal||계약 체결일
+validity-period|유효기간|temporal||유효 기간;유효기간 내
+performance-history|수행실적|performance|PERFORMANCE_AMOUNT|수행 실적;용역실적;사업실적
+delivery-history|납품실적|performance|PERFORMANCE_COUNT|납품 실적;물품납품실적
+performance-certificate|실적증명서|performance|PERFORMANCE_AMOUNT|실적 증명서;실적증명
+similar-performance|유사용역|performance|EXPERIENCE_FIELD|유사 용역;유사사업
+performance-amount|실적금액|performance|PERFORMANCE_AMOUNT|실적 금액;계약금액
+performance-count|실적건수|performance|PERFORMANCE_COUNT|실적 건수;수행 건수
+lookback-years|최근 3년|temporal|EXPERIENCE_FIELD|최근 3개년;최근 5년
+participating-staff|참여인력|staff|STAFF|참여 인력;투입인력;수행인력
+project-manager|사업책임자|staff|STAFF|사업 책임자;책임기술자
+fulltime-staff|상시근로자|staff|STAFF|상시 근로자
+technical-staff|기술인력|staff|STAFF|기술 인력;기술자
+joint-consortium|공동수급체|participation||공동수급;공동도급
+single-bid|단독입찰|participation||단독 입찰
+subcontract|하도급|participation||하도급계약
+no-subcontract|하도급 불가|logic||하도급 금지;하도급 불허
+all-required|모두 충족|logic||모두 갖춘;각 호의 자격을 모두
+any-one|어느 하나|logic||다음 각 호의 어느 하나;또는
+disqualification|참가자격이 없습니다|logic||참가할 수 없습니다;참가자격 없음;입찰참가 불가
+exception|다만|logic||단,;예외적으로
+preferential|가점|evaluation||우대;우대점수
+selection-review|적격심사|evaluation||적격 심사;적격심사기준
+proposal-review|제안서 평가|evaluation||기술평가;제안서평가
+submission-docs|제출서류|document||제출 서류;구비서류
+evidence-docs|증빙서류|document||증빙 서류;입증서류
+task-statement|과업지시서|document||과업 지시서;과업내용서
+specification|규격서|document||시방서;물품규격서
+change-notice|변경공고|notice||변경 공고;정정공고
+bid-cancellation|취소공고|notice||취소 공고;입찰취소

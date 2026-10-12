@@ -1,0 +1,16 @@
+﻿{
+  "version": "0.1.0-candidate",
+  "review_status": "UNREVIEWED",
+  "usage": "candidate graph only; no automatic synonym expansion or eligibility inference",
+  "relations": [
+    {"from":"hq-location","to":"business-location","type":"NOT_EQUIVALENT"},
+    {"from":"registration","to":"certification","type":"NOT_EQUIVALENT"},
+    {"from":"sm-business","to":"small-business","type":"BROADER_THAN_CANDIDATE"},
+    {"from":"small-business","to":"micro-business","type":"NOT_EQUIVALENT"},
+    {"from":"direct-production","to":"sm-business","type":"NOT_EQUIVALENT"},
+    {"from":"performance-history","to":"delivery-history","type":"NOT_EQUIVALENT"},
+    {"from":"industry-code","to":"business-license","type":"NOT_EQUIVALENT"},
+    {"from":"change-notice","to":"bid-cancellation","type":"NOT_EQUIVALENT"},
+    {"from":"bid-eligibility","to":"proposal-review","type":"NOT_EQUIVALENT"}
+  ]
+}
