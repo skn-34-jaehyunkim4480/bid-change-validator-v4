@@ -102,6 +102,15 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     page: { title: '운영 관리', description: '관리자 전용 작업 상태 및 라벨 검수', breadcrumb: '홈 › 운영 관리' },
   },
   {
+    match: (pathname) => pathname.startsWith('/copilot'),
+    page: {
+      title: 'AI Copilot',
+      description: '검토 중인 공고마다 나눈 대화를 이어서 봅니다.',
+      breadcrumb: '홈 › AI Copilot',
+      showTitleBand: false,
+    },
+  },
+  {
     match: (pathname) => pathname.startsWith('/recommendations'),
     page: {
       title: 'AI 추천',

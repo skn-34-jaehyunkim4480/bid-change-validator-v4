@@ -3,7 +3,7 @@
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronDown, Send, X } from 'lucide-react';
+import { ChevronDown, Maximize2, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopilotNavigationLink } from './navigation-link';
 import { CopilotMascot } from './mascot';
@@ -148,6 +148,7 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
     </div>
     {caseId && state.turns.length > 0 && <button type="button" className="copilot-new-conversation"
       disabled={state.busy} onClick={() => store.newConversation(caseId)}>새 대화</button>}
+    {caseId && <CopilotNavigationLink caseId={caseId} className="copilot-expand" href={href('/copilot', caseId)} aria-label="큰 화면에서 보기" title="큰 화면에서 보기"><Maximize2 size={16} /></CopilotNavigationLink>}
     <button type="button" className="copilot-close" aria-label="도우미 닫기" onClick={close}><X size={18} /></button>
   </header>;
 }
@@ -181,7 +182,10 @@ function useRememberedConsent(kind: 'semantic' | 'document') {
   return [value, update] as const;
 }
 
-function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof typeof pages] }) {
+export type CopilotSourcePage = typeof pages[keyof typeof pages];
+
+/** 대화 본문(안내·추천 질문·대화·입력창). 떠 있는 패널과 전용 화면(/copilot)이 함께 쓴다. */
+export function PanelBody({ caseId, page }: { caseId: string; page: CopilotSourcePage }) {
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
   // AI 처리 동의는 사용자가 직접 켠다. 한 번 고른 값은 이 브라우저에 기억해, 패널을 열 때마다 다시 켜지 않아도 된다.

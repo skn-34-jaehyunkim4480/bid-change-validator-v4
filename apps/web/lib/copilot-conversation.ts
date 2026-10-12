@@ -158,6 +158,33 @@ export class ConversationStore {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
     this.listeners.forEach(fn => fn());
   }
+  /** 대화가 있는 검토 건의 id. 대화 목록(전용 화면의 왼쪽)이 쓴다. */
+  caseIds(): string[] {
+    return [...this.states.entries()].filter(([, state]) => state.turns.length > 0).map(([caseId]) => caseId);
+  }
+  /**
+   * 이 브라우저에 남길 모양. 답이 온 턴만 남기고, 서버가 메모리에 들고 있던 대화 식별자는 뺀다 —
+   * 새로고침이나 서버 재시작 뒤에는 그 식별자가 가리키는 대화가 없을 수 있다.
+   */
+  serialize(): Record<string, Pick<Conversation, 'turns' | 'revision'>> {
+    const out: Record<string, Pick<Conversation, 'turns' | 'revision'>> = {};
+    for (const [caseId, state] of this.states) {
+      const turns = state.turns.filter(turn => turn.response);
+      if (turns.length) out[caseId] = { turns: structuredClone(turns), revision: state.revision };
+    }
+    return out;
+  }
+  /** serialize 로 남긴 것을 되살린다. 이미 대화가 있는 검토 건은 건드리지 않는다. */
+  hydrate(saved: unknown) {
+    if (!saved || typeof saved !== 'object') return;
+    for (const [caseId, value] of Object.entries(saved as Record<string, unknown>)) {
+      const turns = (value as { turns?: unknown } | null)?.turns;
+      if (!Array.isArray(turns) || !turns.length || this.states.get(caseId)?.turns.length) continue;
+      const revision = Number((value as { revision?: unknown }).revision) || turns.length;
+      this.states.set(caseId, { ...empty(), turns: structuredClone(turns) as Turn[], revision });
+    }
+    this.listeners.forEach(fn => fn());
+  }
   snapshot(caseId: string): Conversation | null {
     const state = this.get(caseId);
     return state.busy ? null : structuredClone(state);

@@ -1,5 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Search } from 'lucide-react';
 import { NavigationLink } from '@/components/navigation-link';
 import { PageContainer } from '@/components/product/page-container';
 import { listPreflightCases } from '@/lib/api';
@@ -15,6 +18,7 @@ const PRIMARY_NAV = [
   { label: '내 입찰 건', href: '/qualification' },
   { label: '회사 프로필', href: '/company' },
   { label: 'AI 추천', href: '/recommendations' },
+  { label: 'AI Copilot', href: '/copilot' },
   { label: '이용안내', href: '/guide' },
 ] as const;
 
@@ -30,6 +34,27 @@ function isActive(pathname: string, href: string) {
   }
   if (href === '/company') return pathname.startsWith('/company') || pathname.startsWith('/company-profile');
   return pathname.startsWith(href);
+}
+
+/** 메뉴 바 안의 공고 검색. 공고 찾기 화면으로 가서 그 낱말로 찾는다. */
+function HeaderSearch() {
+  const router = useRouter();
+  const [value, setValue] = useState('');
+  return (
+    <form
+      className="app-nav-search"
+      aria-label="공고 검색"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const query = value.trim();
+        router.push(query ? `/notices?q=${encodeURIComponent(query)}` : '/notices');
+      }}
+    >
+      <label className="sr-only" htmlFor="app-nav-search-input">공고 검색</label>
+      <input id="app-nav-search-input" type="search" value={value} onChange={(event) => setValue(event.target.value)} placeholder="공고번호 · 공고명" autoComplete="off" />
+      <button type="submit" aria-label="공고 검색"><Search size={16} /></button>
+    </form>
+  );
 }
 
 export function AppHeader({
@@ -107,6 +132,7 @@ export function AppHeader({
               <NavigationLink href="/admin" className="app-nav-link" aria-current={pathname.startsWith('/admin') ? 'page' : undefined}>운영 관리</NavigationLink>
             )}
           </nav>
+          <HeaderSearch />
         </PageContainer>
       </div>
     </header>
