@@ -331,3 +331,30 @@ body {
   .app-shell .app-primary-nav { justify-content: flex-start; gap: 2px; padding-bottom: 6px; }
   .app-shell .app-nav-link { min-height: 40px; padding: 8px 11px; font-size: 14px; }
 }
+
+/*
+  화면 머리 상자(2026-10-12): 제목 띠를 없앤 화면(내 입찰 건·회사 프로필)의 첫 덩어리를 둥근 상자로 묶고,
+  예전 제목 띠의 배색(진한 파랑 바탕에 흰 글자)을 준다. 안의 배지·단추는 바탕에 맞춰 반투명 흰색으로 바꾼다.
+*/
+.product-hero {
+  border-radius: 22px;
+  padding: 24px 28px;
+  background: var(--product-accent-deep);
+  color: #fff;
+}
+.product-hero h1,
+.product-hero h2 { color: #fff; }
+.product-hero p { color: rgba(255, 255, 255, 0.8); }
+.product-hero [data-slot='badge'],
+.product-hero [data-slot='button'],
+.product-hero a[class*='inline-flex'] {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.product-hero [data-slot='button']:hover:not(:disabled),
+.product-hero a[class*='inline-flex']:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.product-hero [data-slot='button']:disabled { opacity: 0.6; }
+/* 제목 띠가 없는 화면은 메뉴 바 바로 아래에서 머리 상자가 시작한다 — 띠가 있던 자리만큼 비어 보이지 않게 위 여백을 줄인다. */
+.app-shell:not(:has(.app-title-band)) .app-shell-content > main > .app-shell-container { padding-top: 14px; }
+.app-shell:not(:has(.app-title-band)) .app-shell-route-qualification > main { padding-top: 0; }

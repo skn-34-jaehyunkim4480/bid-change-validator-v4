@@ -404,10 +404,10 @@ export default function CompanyPage() {
           </section>
         ) : (
           <>
-            <section className="rounded-[22px] border border-[var(--product-line)] bg-white p-6 shadow-[0_10px_28px_rgba(35,50,90,0.05)]">
+            <section className="product-hero">
               <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                 <div>
-                  <h1 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">{rows.length}개 영역 중 {filledRows}개를 채웠습니다</h1>
+                  <h1 className="text-[28px] font-extrabold tracking-[-0.035em]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
                   <p className="mt-2 text-[14px] text-[var(--product-muted)]">비어 있는 값은 미달로 만들지 않고 확인 필요로 남깁니다.</p>
                 </div>
                 <div className="flex items-center gap-2">
