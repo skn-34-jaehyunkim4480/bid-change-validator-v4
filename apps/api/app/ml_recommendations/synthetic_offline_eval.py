@@ -16,8 +16,6 @@ from .trainer import (baseline_score, deep_scorer, grouped, lgb_score,
 
 
 def evaluate(dataset: Path, models: Path) -> dict:
-    import lightgbm as lgb
-
     manifest = json.loads((dataset.parent / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("evaluation_scope") != "PSEUDO_LABELED_RULE_IMITATION":
         raise ValueError("Only the explicitly marked pseudo-label experiment is supported")
@@ -28,6 +26,8 @@ def evaluate(dataset: Path, models: Path) -> dict:
     test = grouped(rows, "test")
     if not test:
         raise ValueError("No holdout queries")
+    import lightgbm as lgb
+
     bm25 = bm25_map(test)
     booster = lgb.Booster(model_file=str(models / "lightgbm.txt"))
     scorers = {
