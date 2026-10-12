@@ -18,6 +18,7 @@ import { ProfileRecordsManager } from '@/components/product/profile-records-mana
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { COMPANY_REGION_OPTIONS, regionByCode, selectedRegionCode } from '@/lib/company-regions';
 import { COMPANY_SIZE_LABEL, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import {
   createCompany,
@@ -184,19 +185,18 @@ export default function CompanyPage() {
     누르고 나서 422를 보여주는 것보다, 누르기 전에 왜 안 되는지 말하는 편이 낫다.
 
     - industry_codes: []        → 스키마가 거부한다 (at least one code)
-    - region_code: ''           → 스키마가 거부한다 (must not be blank)
-    - 이미 저장된 staff·region_name 을 비우면  → 그 키가 payload 에서 빠져 기존 값이 그대로 남는다.
-      즉 화면에서는 지운 것처럼 보이지만 실제로는 안 지워진다. 「지울 수 있다」고 보이게 두면 거짓말이 된다.
-      값을 실제로 비우려면 백엔드에 「삭제」 의미가 따로 필요해서 이번 범위 밖이다.
+    - 소재지: 공식 시·도 선택 시 지역명과 코드가 항상 쌍으로 변경된다.
+    - 과거 코드/세부 주소가 있는 기존 회사는 사용자가 지역을 바꾸지 않으면 그대로 보존한다.
+    - 인력 입력이 비어 있으면 기존 DB 값을 덮어쓰지 않는다.
   */
   const industryBlock =
     industryList.length === 0 ? '업종은 최소 1개가 필요합니다. 하나는 남겨 주세요.' : null;
 
   const basicsBlock = (() => {
     if (!basics || !savedBasics) return null;
-    if (!basics.region_code.trim()) return '지역 코드는 비울 수 없습니다. 값을 바꾸려면 새 코드를 입력해 주세요.';
-    if (savedBasics.region_name.trim() && !basics.region_name.trim()) {
-      return '이미 저장된 소재지는 화면에서 지울 수 없습니다. 다른 지역명으로 바꾸는 것은 됩니다.';
+    const changedRegion = basics.region_code !== savedBasics.region_code || basics.region_name !== savedBasics.region_name;
+    if (changedRegion && !selectedRegionCode(basics.region_code, basics.region_name)) {
+      return '목록에서 소재지를 다시 선택해 주세요.';
     }
     if (savedBasics.staff_total.trim() && !basics.staff_total.trim()) {
       return '이미 저장된 상시 근로자 수는 화면에서 지울 수 없습니다. 다른 인원으로 바꾸는 것은 됩니다.';
@@ -209,11 +209,12 @@ export default function CompanyPage() {
     setBusy('basics');
     setError('');
     try {
-      const payload: Partial<CompanyCreatePayload> = {
-        region_code: basics.region_code.trim(),
-        region_name: basics.region_name.trim() || undefined,
-        company_size: basics.company_size,
-      };
+      const payload: Partial<CompanyCreatePayload> = { company_size: basics.company_size };
+      // Explicit selection sets both fields together. Unchanged legacy addresses stay untouched.
+      if (basics.region_code !== savedBasics?.region_code || basics.region_name !== savedBasics?.region_name) {
+        payload.region_code = basics.region_code;
+        payload.region_name = basics.region_name;
+      }
       // 빈 칸이면 인력 정보를 건드리지 않는다. 0으로 덮으면 「0명임을 확인했다」가 되어 판정이 달라진다.
       if (basics.staff_total.trim()) {
         payload.staff = {
@@ -362,8 +363,16 @@ export default function CompanyPage() {
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
                 <label className="text-sm font-medium" htmlFor="company-name">회사명<Input id="company-name" className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
                 <label className="text-sm font-medium" htmlFor="company-brn">사업자등록번호<Input id="company-brn" className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
-                <label className="text-sm font-medium" htmlFor="company-region-code">지역 코드<Input id="company-region-code" className="mt-2" value={form.region_code} onChange={(event) => setForm({ ...form, region_code: event.target.value })} /></label>
-                <label className="text-sm font-medium" htmlFor="company-region-name">소재지<Input id="company-region-name" className="mt-2" value={form.region_name} onChange={(event) => setForm({ ...form, region_name: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-region-name">
+                  소재지 (시·도)
+                  <select id="company-region-name" className="mt-2 h-9 w-full rounded-md border border-[var(--product-line)] bg-white px-3 text-sm" value={form.region_code} onChange={(event) => {
+                    const region = regionByCode(event.target.value);
+                    if (region) setForm({ ...form, region_code: region.code, region_name: region.name });
+                  }}>
+                    {COMPANY_REGION_OPTIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm font-medium" htmlFor="company-region-code">지역 코드 (자동)<Input id="company-region-code" className="mt-2 bg-[var(--product-tint)]" value={form.region_code} readOnly /></label>
                 <label className="text-sm font-medium" htmlFor="company-staff-total">전체 인원<Input id="company-staff-total" className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
                 <label className="text-sm font-medium" htmlFor="company-developer-count">개발자 인원<Input id="company-developer-count" className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
               </div>
@@ -518,12 +527,18 @@ export default function CompanyPage() {
 
                 <div className="mt-5 grid gap-5 sm:grid-cols-2">
                   <label className="text-sm font-medium" htmlFor="basics-region-name">
-                    소재지
-                    <Input id="basics-region-name" className="mt-2" value={basics.region_name} onChange={(event) => editBasics({ region_name: event.target.value })} placeholder="예: 전북특별자치도" />
+                    소재지 (시·도)
+                    <select id="basics-region-name" className="mt-2 h-9 w-full rounded-md border border-[var(--product-line)] bg-white px-3 text-sm" value={selectedRegionCode(basics.region_code, basics.region_name)} onChange={(event) => {
+                      const region = regionByCode(event.target.value);
+                      if (region) editBasics({ region_code: region.code, region_name: region.name });
+                    }}>
+                      {!selectedRegionCode(basics.region_code, basics.region_name) && <option value="">기존 소재지 유지 · {basics.region_name || '미설정'} ({basics.region_code || '코드 없음'})</option>}
+                      {COMPANY_REGION_OPTIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+                    </select>
                   </label>
                   <label className="text-sm font-medium" htmlFor="basics-region-code">
-                    지역 코드
-                    <Input id="basics-region-code" className="mt-2" value={basics.region_code} onChange={(event) => editBasics({ region_code: event.target.value })} placeholder="예: 52" />
+                    지역 코드 (자동)
+                    <Input id="basics-region-code" className="mt-2 bg-[var(--product-tint)]" value={basics.region_code} readOnly />
                   </label>
                   <label className="text-sm font-medium" htmlFor="basics-company-size">
                     기업 구분
