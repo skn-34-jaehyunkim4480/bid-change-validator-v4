@@ -23,8 +23,9 @@ Draft PR #30 mounts this router in the protected FastAPI app and connects the Fr
 
 For the BidCheck demo, use only the seeded J01–J32 synthetic companies. The
 `real_dataset` candidate exporter now selects companies through their
-`golden-j01`–`golden-j32` account links; it does not export arbitrary company
-rows or infer synthetic origin from a company name. It pairs those profiles
+`golden-j01`–`golden-j32` account links **and seeded synthetic registration
+numbers**; it does not export arbitrary company rows or infer synthetic origin
+from a company name. It pairs those profiles
 with real public notices for human review, but produces **no relevance labels
 or measured recommendation accuracy**. Keep the generated profiles and review
 template local; do not commit them to the repository or put company profiles

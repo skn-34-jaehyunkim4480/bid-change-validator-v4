@@ -35,12 +35,14 @@ ACTIVE_CANDIDATE_SQL = """SELECT n.id::text AS notice_id, n.bid_notice_no, n.tit
       AND lower(coalesce(v.notice_kind,n.notice_kind,'')) NOT LIKE '%%무효%%'
     ORDER BY v.posted_at DESC NULLS LAST,n.id LIMIT %s"""
 
-# The seeded Golden accounts are the authoritative synthetic-company mapping.
-# Do not export arbitrary companies by ID order (or infer origin from names).
+# Require both the seeded Golden account and its deterministic synthetic
+# registration number; an account repointed to a real company must fail closed.
 GOLDEN_COMPANY_SQL = """SELECT c.id::text AS company_id,c.name,c.region_code,
     c.region_name,c.company_size
     FROM app_users u JOIN companies c ON c.id=u.company_id
     WHERE u.username ~ '^golden-j(0[1-9]|[12][0-9]|3[0-2])$'
+      AND c.business_registration_number =
+          '9902' || lpad(substring(u.username from 9),6,'0')
     ORDER BY u.username LIMIT %s"""
 
 def _digest(path):

@@ -73,19 +73,23 @@ def test_review_company_candidates_only_use_seeded_golden_accounts():
     transaction = connection.begin()
     session = Session(bind=connection)
     try:
-        golden = Company(name="합성회사 J01", company_size="SMALL")
+        golden = Company(name="합성회사 J01", company_size="SMALL",
+                         business_registration_number="9902000001")
         ordinary = Company(name="합성회사처럼 보이는 일반 회사", company_size="SMALL")
-        session.add_all((golden, ordinary))
+        repointed = Company(name="일반 회사", company_size="SMALL")
+        session.add_all((golden, ordinary, repointed))
         session.flush()
         session.add_all((
             AppUser(username="golden-j01", password_hash="unused", company_id=golden.id),
             AppUser(username=f"ordinary-{uuid4().hex}", password_hash="unused", company_id=ordinary.id),
+            AppUser(username="golden-j02", password_hash="unused", company_id=repointed.id),
         ))
         session.flush()
         rows = connection.exec_driver_sql(GOLDEN_COMPANY_SQL, (100,)).all()
         ids = {row[0] for row in rows}
         assert str(golden.id) in ids
         assert str(ordinary.id) not in ids
+        assert str(repointed.id) not in ids
     finally:
         session.close()
         transaction.rollback()
