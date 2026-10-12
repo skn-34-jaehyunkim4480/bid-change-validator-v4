@@ -183,6 +183,58 @@ export default function QualificationPage() {
   return <QualificationWorkspace key={requestedCaseId} requestedCaseId={requestedCaseId} />;
 }
 
+const CASES_PER_PAGE = 9;
+
+/** 검토 중인 공고를 3×3 카드로 보여 주고, 아홉 건을 넘으면 다음 쪽으로 넘긴다. */
+function CaseGrid({ cases }: { cases: PreflightCase[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(cases.length / CASES_PER_PAGE));
+  const current = Math.min(page, pageCount - 1);
+  const shown = cases.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
+  return (
+    <main className="bg-white text-[var(--product-body)]">
+      <div className="app-shell-container py-10">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-[24px] font-extrabold tracking-[-0.03em]">검토 중인 공고 <span className="text-[var(--product-muted)]">{cases.length}건</span></h2>
+            <p className="mt-1 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
+          </div>
+          <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
+        </div>
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="검토 중인 공고">
+          {shown.map((item) => {
+            const changed = item.baseline_version_number != null && item.baseline_version_number !== item.current_version_number;
+            return (
+              <li key={item.id}>
+                <NavigationLink
+                  href={`/qualification?caseId=${encodeURIComponent(item.id)}`}
+                  className="flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border border-[var(--product-line)] bg-white p-5 transition-colors hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]"
+                >
+                  <span className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)]">
+                    <span className="font-semibold tabular-nums">{item.bid_notice_no}</span>
+                    {changed
+                      ? <span className="rounded-full bg-[#1c348f] px-2 py-0.5 text-[12px] font-bold text-white">변경공고 v{item.baseline_version_number} → v{item.current_version_number}</span>
+                      : <span className="rounded-full border border-[var(--product-line)] px-2 py-0.5 text-[12px] font-semibold">v{item.current_version_number}</span>}
+                  </span>
+                  <strong className="line-clamp-2 text-[17px] leading-6 text-[var(--product-ink)]">{item.notice_title || item.title}</strong>
+                  <span className="mt-auto text-[13px] text-[var(--product-muted)]">최근 변경 {new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}</span>
+                </NavigationLink>
+              </li>
+            );
+          })}
+        </ul>
+        {pageCount > 1 && (
+          <nav className="mt-6 flex items-center justify-center gap-3" aria-label="검토 건 쪽 이동">
+            <Button variant="outline" onClick={() => setPage(current - 1)} disabled={current === 0}>이전</Button>
+            <span className="text-[14px] tabular-nums text-[var(--product-muted)]" aria-live="polite">{current + 1} / {pageCount}</span>
+            <Button variant="outline" onClick={() => setPage(current + 1)} disabled={current >= pageCount - 1}>다음</Button>
+          </nav>
+        )}
+      </div>
+    </main>
+  );
+}
+
 function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string | null }) {
   const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
@@ -355,10 +407,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const caseResult = await listPreflightCases();
       if (request !== generation.current) return;
       setCases(caseResult.items);
-      if (caseResult.items[0]) {
+      if (caseResult.items.length === 1) {
         router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
         return;
       }
+      // 여럿이면 어느 것을 열지 사용자가 카드 목록에서 고른다(CaseGrid).
+      if (caseResult.items.length > 1) return;
       // Fetch the creation form's options only when the user has no case to open.
       const [noticeResult, companyResult] = await Promise.all([listNotices(), listCompanies()]);
       if (request !== generation.current) return;
@@ -845,7 +899,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCaseId}` : evidenceHref); } : undefined} />;
   };
 
-  if (busy === 'load' || (!requestedCaseId && cases.length > 0 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
+  if (busy === 'load' || (!requestedCaseId && cases.length === 1 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
     {requestedCaseId && <ActionCard caseId={requestedCaseId} />}
     <output className="block space-y-5" aria-label="?? ???? ???? ????">
       <div className="h-10 w-64 animate-pulse rounded-xl bg-slate-200" />
@@ -855,6 +909,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
     </output>
   </main>;
+  if (!requestedCaseId && cases.length > 1) return <CaseGrid cases={cases} />;
   if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12">
     <ActionCard caseId={requestedCaseId} />
     <p role="alert">{error || '검토 건을 찾을 수 없습니다.'}</p>
@@ -866,9 +921,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const caseHeader = activeCase ? (
       <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
-        {/* 검토 건 이동은 화면 맨 아래 카드에 있어서 아무도 못 찾았다. 제목 옆으로 올린다. */}
+        {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
         <div className="flex flex-wrap items-center gap-2">
-          <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
+          {cases.length > 1 && <NavigationLink href="/qualification" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
           <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
         </div>
