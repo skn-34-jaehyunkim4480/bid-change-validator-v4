@@ -35,6 +35,14 @@ ACTIVE_CANDIDATE_SQL = """SELECT n.id::text AS notice_id, n.bid_notice_no, n.tit
       AND lower(coalesce(v.notice_kind,n.notice_kind,'')) NOT LIKE '%%무효%%'
     ORDER BY v.posted_at DESC NULLS LAST,n.id LIMIT %s"""
 
+# The seeded Golden accounts are the authoritative synthetic-company mapping.
+# Do not export arbitrary companies by ID order (or infer origin from names).
+GOLDEN_COMPANY_SQL = """SELECT c.id::text AS company_id,c.name,c.region_code,
+    c.region_name,c.company_size
+    FROM app_users u JOIN companies c ON c.id=u.company_id
+    WHERE u.username ~ '^golden-j(0[1-9]|[12][0-9]|3[0-2])$'
+    ORDER BY u.username LIMIT %s"""
+
 def _digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -53,7 +61,7 @@ def family_map(notices, edges):
             parents[max(a,b)] = min(a,b)
     return {key:root(key) for key in parents}
 
-def local_snapshot(db_url, max_notices=500, max_companies=30):
+def local_snapshot(db_url, max_notices=500, max_companies=32):
     require_isolated_data_url(db_url)
     if not (1<=max_notices<=2000 and 1<=max_companies<=100):
         raise ValueError("Bounded local snapshot limits exceeded")
@@ -73,9 +81,10 @@ def local_snapshot(db_url, max_notices=500, max_companies=30):
                     AND notice_id=ANY(%s::uuid[]) AND previous_notice_id=ANY(%s::uuid[])""",
                     (notice_ids,notice_ids))
                 edges=[tuple(x.values()) for x in cur.fetchall()]
-            cur.execute("""SELECT id::text AS company_id,name,region_code,region_name,company_size
-                FROM companies ORDER BY id LIMIT %s""",(max_companies,))
+            cur.execute(GOLDEN_COMPANY_SQL,(max_companies,))
             companies=list(cur.fetchall())
+            if not companies:
+                raise ValueError("No seeded Golden synthetic companies found")
             ids=[c["company_id"] for c in companies]
             lookup={c["company_id"]:c for c in companies}
             for c in companies:
@@ -144,7 +153,8 @@ def _profile(company):
     terms.extend(x.get("role_name") for x in company["staff_roles"])
     return " ".join(str(t) for t in terms if t)
 
-def create_review_dataset(notices,companies,out,seed=42,max_pairs=2000):
+def create_review_dataset(notices,companies,out,seed=42,max_pairs=2000,
+                          company_source="unspecified"):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     if not 1<=max_pairs<=10000:raise ValueError("Invalid max_pairs")
     company_ids={c["company_id"] for c in companies}
@@ -249,7 +259,9 @@ def create_review_dataset(notices,companies,out,seed=42,max_pairs=2000):
         "dataset_version":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
         "notice_count":len(notices),"company_count":len(companies),"pair_count":len(rows),
         "label_counts":{"unreviewed":len(rows),"human_reviewed":0},
-        "source":"isolated_local_postgresql_read_only","analysis_run_count":len({r["analysis_run_id"] for n in notices for r in n["requirements"]}),
+        "source":"isolated_local_postgresql_read_only","company_source":company_source,
+        "evaluation_scope":"REVIEW_CANDIDATES_ONLY_NOT_MEASURED_RECOMMENDATION_ACCURACY",
+        "analysis_run_count":len({r["analysis_run_id"] for n in notices for r in n["requirements"]}),
         "families":len(family_ids),
         "valid_company_family_holdout":feasible and all(any(row["split"]==s for row in rows) for s in ("train","validation","test")),
         "holdout_policy":"No actual holdout metrics until >=3 disjoint companies, families, and human graded pairs",
@@ -261,11 +273,13 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--out",required=True)
     p.add_argument("--max-notices",type=int,default=500)
-    p.add_argument("--max-companies",type=int,default=30)
+    p.add_argument("--max-companies",type=int,default=32)
     args=p.parse_args()
     import os
     url=os.getenv("BIDCHECK_LOCAL_DATABASE_URL")
     if not url:raise SystemExit("BIDCHECK_LOCAL_DATABASE_URL is required; remote sources blocked")
     notices,companies=local_snapshot(url,args.max_notices,args.max_companies)
-    print(json.dumps(create_review_dataset(notices,companies,args.out),ensure_ascii=False,indent=2))
+    print(json.dumps(create_review_dataset(
+        notices,companies,args.out,company_source="golden-j01-j32-account-mapping"
+    ),ensure_ascii=False,indent=2))
 if __name__=="__main__":main()

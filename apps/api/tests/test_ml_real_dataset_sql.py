@@ -5,9 +5,10 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from apps.api.app.auth_models import AppUser
 from apps.api.app.database import engine
-from apps.api.app.ml_recommendations.real_dataset import ACTIVE_CANDIDATE_SQL
-from apps.api.app.models import BidNotice, BidNoticeVersion
+from apps.api.app.ml_recommendations.real_dataset import ACTIVE_CANDIDATE_SQL, GOLDEN_COMPANY_SQL
+from apps.api.app.models import BidNotice, BidNoticeVersion, Company
 
 
 def test_review_candidates_exclude_expired_and_cancelled_notices():
@@ -61,6 +62,30 @@ def test_review_candidates_exclude_expired_and_cancelled_notices():
             if any(row[0] == notice_id and row[2] == "ML review candidate no_posting" for row in rows)
         )
         assert next(row[7] for row in rows if row[0] == no_posting_id) is None
+    finally:
+        session.close()
+        transaction.rollback()
+        connection.close()
+
+
+def test_review_company_candidates_only_use_seeded_golden_accounts():
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    try:
+        golden = Company(name="합성회사 J01", company_size="SMALL")
+        ordinary = Company(name="합성회사처럼 보이는 일반 회사", company_size="SMALL")
+        session.add_all((golden, ordinary))
+        session.flush()
+        session.add_all((
+            AppUser(username="golden-j01", password_hash="unused", company_id=golden.id),
+            AppUser(username=f"ordinary-{uuid4().hex}", password_hash="unused", company_id=ordinary.id),
+        ))
+        session.flush()
+        rows = connection.exec_driver_sql(GOLDEN_COMPANY_SQL, (100,)).all()
+        ids = {row[0] for row in rows}
+        assert str(golden.id) in ids
+        assert str(ordinary.id) not in ids
     finally:
         session.close()
         transaction.rollback()

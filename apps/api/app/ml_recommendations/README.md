@@ -21,10 +21,27 @@ Draft PR #30 mounts this router in the protected FastAPI app and connects the Fr
 
 ## Human review, ML training, and MLflow (local machine only)
 
+For the BidCheck demo, use only the seeded J01–J32 synthetic companies. The
+`real_dataset` candidate exporter now selects companies through their
+`golden-j01`–`golden-j32` account links; it does not export arbitrary company
+rows or infer synthetic origin from a company name. It pairs those profiles
+with real public notices for human review, but produces **no relevance labels
+or measured recommendation accuracy**. Keep the generated profiles and review
+template local; do not commit them to the repository or put company profiles
+in presentation materials.
+
+The existing `dataset`/`trainer` pseudo-label experiment matches notice titles
+to notice titles. It is useful as a model-training smoke test, **not** a
+synthetic-company → notice recommendation evaluation. The production
+`human_training`/Champion gate requires independently approved REAL-company
+labels and must not be bypassed for the demo. A synthetic-company relevance
+evaluation needs separately reviewed J01–J32 pair labels and a clearly marked
+test-only path; no such result is claimed here.
+
 Run the following from apps/api using an isolated Python 3.12 environment.
 
 1. python -m app.ml_recommendations.real_dataset --help
-   Prepare real unlabelled company/notice candidates from read-only LOCAL PostgreSQL.
+   Prepare J01–J32 synthetic-company/public-notice candidates from read-only LOCAL PostgreSQL.
 2. People annotate review_template.csv with grades 0..3, reviewer ID, time with timezone and rationale. No generated/oracle labels.
 3. A different system administrator independently approves each real-company review in the admin UI and exports the approved labels. Reopened or changed-input labels are excluded.
 4. python -m app.ml_recommendations.review --dataset LOCAL_DATASET --reviewed-csv LOCAL_CSV --approved-export APPROVED.json --out LOCAL_REVIEWED.jsonl
