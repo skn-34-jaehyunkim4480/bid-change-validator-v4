@@ -2,6 +2,7 @@
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopilotNavigationLink } from './navigation-link';
@@ -37,6 +38,49 @@ export function CopilotPanel() {
     media.addEventListener('change', display);
     return () => { media.removeEventListener('change', display); element.close(); };
   }, [open, page]);
+  // 창 크기는 React 상태가 아니라 dialog 의 CSS 변수로 둔다 — 끄는 동안 다시 그리지 않고, 저장된 크기는 이 브라우저에 남는다.
+  useEffect(() => {
+    const element = dialog.current;
+    if (element) applyPanelSize(element, readPanelSize());
+  }, [page]);
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const element = dialog.current;
+    if (!element) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    const rect = element.getBoundingClientRect();
+    const origin = { x: event.clientX, y: event.clientY, w: rect.width, h: rect.height };
+    let size = clampPanelSize(origin.w, origin.h);
+    // 창이 오른쪽 아래에 붙어 있으므로 왼쪽 위 모서리를 끌면 왼쪽·위로 커진다.
+    const move = (pointer: PointerEvent) => {
+      size = clampPanelSize(origin.w + origin.x - pointer.clientX, origin.h + origin.y - pointer.clientY);
+      applyPanelSize(element, size);
+    };
+    const stop = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      savePanelSize(size);
+    };
+    handle.setPointerCapture(event.pointerId);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  };
+  const resizeByKey = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const element = dialog.current;
+    const step = { ArrowLeft: [24, 0], ArrowRight: [-24, 0], ArrowUp: [0, 24], ArrowDown: [0, -24] }[event.key];
+    if (!element || !step) return;
+    event.preventDefault();
+    const rect = element.getBoundingClientRect();
+    const size = clampPanelSize(rect.width + step[0], rect.height + step[1]);
+    applyPanelSize(element, size);
+    savePanelSize(size);
+  };
+  const resetSize = () => {
+    if (dialog.current) applyPanelSize(dialog.current, null);
+    savePanelSize(null);
+  };
   const close = () => { setOpen(false); toggle.current?.focus(); };
   if (!page) return null;
   return <>
@@ -44,10 +88,51 @@ export function CopilotPanel() {
       <CopilotMascot /> AI Copilot
     </button>
     <dialog ref={dialog} id="copilot-panel" className="copilot-panel" aria-labelledby="copilot-title" onCancel={close}>
+      <button type="button" className="copilot-resize" aria-label="도우미 창 크기 조절" title="끌어서 크기 조절 · 두 번 누르면 원래 크기"
+        onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={resetSize} />
       <PanelHeader caseId={caseId} close={close} />
       <PanelBody key={caseId} caseId={caseId} page={page} />
     </dialog>
   </>;
+}
+
+type PanelSize = { w: number; h: number };
+const PANEL_SIZE_KEY = 'bidcheck.copilot.panel-size';
+const PANEL_MIN: PanelSize = { w: 340, h: 420 };
+
+/** 화면 밖으로 나가지 않게 한다. 오른쪽 24px·아래 76px 에 붙어 있으므로 그만큼의 여백을 남긴다. */
+function clampPanelSize(w: number, h: number): PanelSize {
+  return {
+    w: Math.round(Math.max(PANEL_MIN.w, Math.min(w, window.innerWidth - 48))),
+    h: Math.round(Math.max(PANEL_MIN.h, Math.min(h, window.innerHeight - 100))),
+  };
+}
+
+function applyPanelSize(element: HTMLElement, size: PanelSize | null) {
+  if (size) {
+    element.style.setProperty('--copilot-w', `${size.w}px`);
+    element.style.setProperty('--copilot-h', `${size.h}px`);
+  } else {
+    element.style.removeProperty('--copilot-w');
+    element.style.removeProperty('--copilot-h');
+  }
+}
+
+function readPanelSize(): PanelSize | null {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(PANEL_SIZE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object' && 'w' in saved && 'h' in saved && typeof saved.w === 'number' && typeof saved.h === 'number') {
+      return clampPanelSize(saved.w, saved.h);
+    }
+  } catch { /* 저장소 차단·깨진 값 — 기본 크기 */ }
+  return null;
+}
+
+function savePanelSize(size: PanelSize | null) {
+  try {
+    if (size) window.localStorage.setItem(PANEL_SIZE_KEY, JSON.stringify(size));
+    else window.localStorage.removeItem(PANEL_SIZE_KEY);
+  } catch { /* 저장소 차단 — 이번 방문에만 유지 */ }
 }
 
 function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
@@ -67,7 +152,8 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
   </header>;
 }
 
-const consentKey = (kind: 'semantic' | 'document') => `bidcheck.copilot.consent.${kind}`;
+// v2: 안내 문구를 바꾸면서 열쇠를 새로 했다. 예전 체크를 이어받으면 새 안내를 한 번도 보지 못한다.
+const consentKey = (kind: 'semantic' | 'document') => `bidcheck.copilot.notice.v2.${kind}`;
 const consentListeners = new Set<() => void>();
 // 저장소를 못 쓰는 브라우저에서도 이번 방문 동안은 고른 값이 유지되게 한다.
 const consentMemory = new Map<string, boolean>();
@@ -100,7 +186,8 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const [question, setQuestion] = useState('');
   // AI 처리 동의는 사용자가 직접 켠다. 한 번 고른 값은 이 브라우저에 기억해, 패널을 열 때마다 다시 켜지 않아도 된다.
   const [semanticProcessing, setSemanticProcessing] = useRememberedConsent('semantic');
-  const [documentProcessing, setDocumentProcessing] = useRememberedConsent('document');
+  // 안내를 확인하면 공고문도 함께 읽어 답한다. 공고문은 공개 문서라 따로 묻지 않는다(2026-10-12 사용자 결정).
+  const documentProcessing = semanticProcessing;
   const [jobsOpen, setJobsOpen] = useState({ page, open: true });
   const [catalogState, setCatalogState] = useState<{ caseId: string; catalog: GuidedJobCatalog | null; error: string }>({ caseId: '', catalog: null, error: '' });
   const end = useRef<HTMLDivElement>(null);
@@ -121,7 +208,16 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const ask = (text: string, intent?: CopilotIntent, guided?: { jobId: string; questionId: string }, free = false) => {
     if (!caseId || state.busy || !text.trim()) return;
     setJobsOpen({ page, open: false });
-    void store.ask(caseId, text.trim(), intent, page, semanticProcessing, documentProcessing, guided, free);
+    void store.ask(caseId, text.trim(), intent, page, semanticProcessing, free ? documentProcessing : false, guided, free);
+  };
+  // 추천 질문의 두 묶음은 답하는 길이 다르다(2026-10-12).
+  //   변경 공고 대응 — 안내형 경로 그대로. 변경 카드·확인 항목·답변 입력 버튼을 그 경로가 만든다. 공고문은 싣지 않는다.
+  //   입찰 참여 준비 — 공고문을 읽어야 답할 수 있는 질문이라 입력창 질문과 같은 자유 대화로 보낸다. 안내형 경로는
+  //                    공고문을 실으면 입력 한도를 넘겨 "공고문 근거가 너무 많아 답변을 생성하지 못했습니다" 로 끝났다.
+  const readsDocuments = (jobId: string) => jobId === 'bid_preparation';
+  const askRecommended = (job: { job_id: string; label: string }, item: { question_id: string; label: string }) => {
+    if (readsDocuments(job.job_id)) ask(`${job.label}: ${item.label}`, undefined, undefined, true);
+    else ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id });
   };
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
@@ -132,16 +228,13 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <h3>{caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
         <p>저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.</p>
       </div>}
-      {caseId && <div className="copilot-processing-options" aria-label="AI 처리 옵션">
-        <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="AI 상세 설명 사용">
+      {/* 사용 전 안내는 처음 한 번만 보인다. 확인하면 이 브라우저에서 다시 묻지 않는다. */}
+      {caseId && !semanticProcessing && <div className="copilot-processing-options" aria-label="사용 전 안내">
+        <p className="copilot-consent-notice">이 챗봇을 사용하면 회사 정보가 외부 API로 전달될 수 있습니다.</p>
+        <label className="copilot-consent-check" htmlFor="copilot-semantic-processing">
           <input id="copilot-semantic-processing" type="checkbox" checked={semanticProcessing} disabled={state.busy}
             onChange={event => setSemanticProcessing(event.target.checked)} />
-          <span><strong>AI 상세 설명 사용</strong><small>켜면 질문·관련 대화·현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용합니다. AI는 핵심 요건 판정을 새로 만들거나 법적 참가 가능 여부를 보증하지 않습니다. 대화는 서버 재시작 시 초기화됩니다.</small></span>
-        </label>
-        <label className="copilot-semantic-toggle" htmlFor="copilot-document-processing" aria-label="공고문 근거 답변 사용">
-          <input id="copilot-document-processing" type="checkbox" checked={documentProcessing} disabled={state.busy}
-            onChange={event => setDocumentProcessing(event.target.checked)} />
-          <span><strong>공고문 근거 답변 사용</strong><small>켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용해 근거 답변을 생성합니다. 회사 프로필·저장 입력은 문서 검색 경로에 보내지 않습니다.</small></span>
+          <span>이해하였습니다.</span>
         </label>
       </div>}
       {caseId && catalog && <section className="copilot-jobs" aria-label="검증된 업무 질문">
@@ -149,18 +242,24 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
           <span><ChevronDown size={16} aria-hidden="true" />추천 질문 6개</span>
           <span>{jobsExpanded ? '접기' : '보기'}</span>
         </button>
-        {jobsExpanded && <div className="copilot-jobs-list">{catalog.jobs.map(job => <section className="copilot-job" key={job.job_id}>
-          <h4>{job.label}</h4>
-          <ol>{job.questions.map(item => <li key={item.question_id}>
-            <Button type="button" variant="ghost" className="copilot-quiet"
-              disabled={state.busy || item.availability === 'BLOCKED'}
-              title={item.unavailable_reason ?? item.answer_scope}
-              onClick={() => { store.focus(caseId, null); ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id }); }}>
-              {item.order}. {item.label}
-            </Button>
-            {item.unavailable_reason && <small>{item.unavailable_reason}</small>}
-          </li>)}</ol>
-        </section>)}</div>}
+        {jobsExpanded && <div className="copilot-jobs-list">{catalog.jobs.map(job => {
+          // 묶음 안의 질문이 모두 같은 이유로 막혀 있으면 이유를 질문마다 되풀이하지 않고 묶음 아래에 한 번만 적는다.
+          const reasons = job.questions.map(item => item.unavailable_reason ?? '');
+          const sharedReason = reasons.length > 1 && reasons[0] && reasons.every(reason => reason === reasons[0]) ? reasons[0] : null;
+          return <section className={job.job_id === 'changed_notice' ? 'copilot-job copilot-job-change' : 'copilot-job'} key={job.job_id}>
+            <h4>{job.label}</h4>
+            <ol>{job.questions.map(item => <li key={item.question_id}>
+              <Button type="button" variant="ghost" className="copilot-quiet"
+                disabled={state.busy || item.availability === 'BLOCKED' || (readsDocuments(job.job_id) && !semanticProcessing)}
+                title={item.unavailable_reason ?? item.answer_scope}
+                onClick={() => { store.focus(caseId, null); askRecommended(job, item); }}>
+                {item.order}. {item.label}
+              </Button>
+              {item.unavailable_reason && !sharedReason && <small>{item.unavailable_reason}</small>}
+            </li>)}</ol>
+            {sharedReason && <small>{sharedReason}</small>}
+          </section>;
+        })}</div>}
       </section>}
       {caseId && !catalog && !catalogError && <p className="copilot-limitation">검증된 질문을 확인하고 있어요…</p>}
       {catalogError && <p role="alert" className="copilot-error">{catalogError}</p>}
@@ -180,7 +279,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
             {followUps.length > 0 && <div className="copilot-followups" aria-label="관련 후속 질문">
               <strong>이어서 확인하기</strong>
               {followUps.map(item => <Button type="button" variant="outline" className="copilot-quiet" key={item.question_id}
-                disabled={state.busy} onClick={() => ask(item.label, undefined, { jobId: job!.job_id, questionId: item.question_id })}>
+                disabled={state.busy} onClick={() => askRecommended(job!, item)}>
                 {item.label}
               </Button>)}
             </div>}
@@ -215,8 +314,8 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="공고나 우리 회사 참가자격에 대해 질문해 주세요"
-          disabled={!caseId || state.busy} />
+          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : '공고나 우리 회사 참가자격에 대해 질문해 주세요'}
+          disabled={!caseId || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
       <small>Enter 전송 · Shift+Enter 줄바꿈</small>

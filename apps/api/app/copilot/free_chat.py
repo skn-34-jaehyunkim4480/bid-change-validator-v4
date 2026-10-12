@@ -15,8 +15,10 @@
 """
 from __future__ import annotations
 
+import math
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
@@ -35,6 +37,8 @@ MAX_BRIEFING_CHARS = 12_000
 MAX_QUOTE_CHARS = 220
 MAX_HISTORY_TURNS = 4
 MAX_PASSAGES = 4
+MAX_PASSAGE_CHARS = 1200
+KST = timezone(timedelta(hours=9))
 
 Scope = Literal["CASE", "DOMAIN", "OUT_OF_SCOPE"]
 Status = Literal["OK", "EMPTY_QUESTION", "CONSENT_REQUIRED", "MODEL_UNAVAILABLE", "FAILED"]
@@ -44,8 +48,8 @@ OUT_OF_SCOPE_ANSWER = (
     "공고 내용, 참가자격 판정 결과, 확인할 사항, 입찰 절차나 용어에 대해 물어봐 주세요."
 )
 CONSENT_ANSWER = (
-    "자유 질문에 답하려면 'AI 상세 설명 사용' 을 켜 주세요. "
-    "켜면 질문과 대화, 현재 판정 결과, 판정에 쓰인 회사 정보가 AI 처리에 사용됩니다."
+    "질문에 답하려면 도우미 위쪽의 안내를 확인하고 '이해하였습니다' 에 체크해 주세요. "
+    "체크하면 질문과 대화, 현재 판정 결과, 판정에 쓰인 회사 정보, 현재 공고문이 AI 처리에 사용됩니다."
 )
 
 OVERALL_LABELS = {
@@ -82,8 +86,15 @@ scope 가 OUT_OF_SCOPE 면 answer 는 빈 문자열로 둔다. 서버가 정해 
 CASE·DOMAIN 일 때 answer 를 쓰는 규칙:
 1. 이번 공고의 충족·미충족·확인 필요를 절대 새로 판정하지 않는다. [현재 상태] 에 적힌 결과를 그대로 전하고 풀어 설명한다.
    "참가할 수 있나요?" 에는 저장된 종합 판정과 그 이유를 말하고, 법적 참가 가능 여부를 보증하지 않는다는 점을 밝힌다.
+   이 단서는 참가 가능 여부를 직접 물었을 때 한 번만 쓴다. 이전 답변에서 이미 말했으면 되풀이하지 않는다.
 2. [현재 상태] 와 [공고문 발췌] 에 없는 이번 건의 구체적 사실(금액, 날짜, 서류, 자격 보유 여부 등)은 지어내지 않는다.
-   없으면 없다고 말하고, 공고 원문이나 참가자격 화면 중 어디에서 확인하면 되는지 안내한다.
+   없으면 없다고 말하고, 어디에서 확인하면 되는지 안내한다. 확인할 곳은 아래 셋 가운데 질문에 해당하는 것만 말한다.
+   셋을 매번 나열하지 않고, 이전 답변에서 한 안내를 되풀이하지 않는다.
+   - 공고가 정한 내용(서류, 일정, 평가 방법 등)은 공고 원문과 첨부 문서(제안요청서 등).
+   - 판정 결과와 그 근거는 이 서비스의 참가자격 화면.
+   - 회사가 어떤 면허·지정·인증을 갖고 있는지는 회사가 가진 증빙(등록증, 지정서, 확인서)이나 그것을 발급한 기관.
+     이 서비스나 나라장터 화면에서 회사의 보유 여부를 조회할 수 있다고 말하지 않는다.
+   [공고문 발췌] 에 답이 있으면 "확인되지 않는다" 고 하지 말고 그 내용으로 답한다.
 3. 근거를 물으면 [현재 상태] 나 [공고문 발췌] 의 원문을 따옴표로 그대로 인용한다. 원문을 고쳐 쓰지 않는다.
 4. '확인 필요' 인 항목은 왜 확정하지 못했는지와 담당자가 무엇을 확인하면 되는지를 말한다. 확인 필요를 충족이나 미충족으로 바꿔 말하지 않는다.
 5. 일반 지식(DOMAIN)은 아는 대로 답하되, 이번 공고에 그대로 적용된다고 단정하지 않는다.
@@ -138,6 +149,23 @@ def _plain(text: str) -> str:
     return text.replace("`", "")
 
 
+def _kst(value: datetime) -> str:
+    """저장된 시각은 UTC 다. 담당자가 보는 공고의 시각(한국 시간)으로 적는다 — 그대로 적으면 마감이 9시간 일찍 보인다."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return f"{value.astimezone(KST):%Y-%m-%d %H:%M} (한국 시간)"
+
+
+# 나라장터 공고 목록 조회 원본(raw_json)에서 그대로 옮겨 적는 값. 발주처가 입력한 사실이라 문서를 읽지 않아도 답할 수 있다.
+_NOTICE_FACTS = (
+    ("용역·물품 구분", "srvceDivNm"), ("입찰 방식", "bidMethdNm"), ("낙찰자 결정 방법", "sucsfbidMthdNm"),
+    ("공동수급", "cmmnSpldmdMethdNm"), ("개찰 일시", "opengDt"), ("입찰참가자격 등록 마감", "bidQlfctRgstDt"),
+    ("공공조달 분류", "pubPrcrmntClsfcNm"), ("예정가격 결정 방법", "prearngPrceDcsnMthdNm"),
+)
+_NOTICE_AMOUNTS = (("배정예산", "asignBdgtAmt"),)
+_CODE_PLACEHOLDER_RE = re.compile(r"^[(]없음[)]")
+
+
 def _notice_lines(version: BidNoticeVersion | None) -> list[str]:
     if version is None:
         return []
@@ -150,9 +178,20 @@ def _notice_lines(version: BidNoticeVersion | None) -> list[str]:
         if value:
             lines.append(f"  {label}: {value}")
     if version.bid_closed_at:
-        lines.append(f"  입찰 마감: {version.bid_closed_at:%Y-%m-%d %H:%M}")
+        lines.append(f"  입찰 마감: {_kst(version.bid_closed_at)}")
     if version.estimated_price is not None:
         lines.append(f"  추정가격: {int(version.estimated_price):,}원")
+    raw = getattr(version, "raw_json", None)
+    raw = raw if isinstance(raw, dict) else {}
+    for label, key in _NOTICE_AMOUNTS:
+        digits = str(raw.get(key) or "").strip()
+        if digits.isdigit() and int(digits) > 0:
+            lines.append(f"  {label}: {int(digits):,}원")
+    for label, key in _NOTICE_FACTS:
+        value = str(raw.get(key) or "").strip()
+        if value:
+            # "(없음)공동수급불허" 처럼 코드 자리 표시가 붙어 온다.
+            lines.append(f"  {label}: {_clip(_CODE_PLACEHOLDER_RE.sub('', value), 80)} (나라장터 입력값)")
     return lines
 
 
@@ -267,7 +306,7 @@ def answer_free_question(
     # [현재 상태] 는 매번 새로 만들어 맨 앞에 둔다. 앞선 답변이 사실의 출처가 되면 오류가 누적된다.
     parts = [f"[현재 상태]\n{briefing}"]
     if passages:
-        parts.append("[공고문 발췌]\n" + "\n".join(f"- {_clip(passage, 600)}" for passage in passages[:MAX_PASSAGES]))
+        parts.append("[공고문 발췌]\n" + "\n".join(f"- {_clip(passage, MAX_PASSAGE_CHARS)}" for passage in passages[:MAX_PASSAGES]))
     for turn in (history or [])[-MAX_HISTORY_TURNS:]:
         parts.append(f"[이전 질문]\n{_clip(turn.question, 600)}\n\n[이전 답변]\n{_clip(turn.answer, 1200)}")
     parts.append(f"[담당자 질문]\n{text}")
@@ -306,6 +345,81 @@ def load_briefing(db, case) -> tuple[str, Any]:
     return render_case_briefing(version, analysis, judgment, changes=changes), summary
 
 
+# 질문에서 뜻이 없는 낱말(묻는 말투)과 조사. 남은 낱말로 공고문 대목을 고른다.
+_ASK_WORDS = {
+    "뭐뭐", "뭐야", "뭔가", "무엇", "어떻게", "어디", "어디서", "언제", "얼마", "알려", "알려줘", "말해", "설명", "필요", "가능",
+    "있어", "없어", "되나", "하나", "우리", "회사", "이번", "공고", "관련", "대해", "그럼", "그건", "이거", "해줘", "뭐",
+}
+_PARTICLE_RE = re.compile(r"(이랑|이나|이야|인가요|인가|인지|에서|으로|하고|해야|해요|돼요|은|는|이|가|을|를|의|에|도|로|과|와|야|요|해|돼)$")
+# 담당자가 쓰는 말과 공고문이 쓰는 말이 다른 경우.
+_TOPIC_TERMS = (
+    (("서류",), ("제출서류", "구비서류", "제출할서류", "증빙서류", "첨부서류")),
+    (("배점", "평가"), ("배점", "평가항목", "평가기준", "기술평가", "가격평가", "평가방법")),
+    (("공동수급", "컨소시엄", "공동"), ("공동수급", "공동계약", "공동이행", "분담이행", "공동도급")),
+    (("기간",), ("사업기간", "계약기간", "용역기간", "과업기간", "수행기간")),
+    (("예산", "금액", "가격"), ("사업예산", "추정가격", "추정예산", "배정예산", "소요예산")),
+    (("하도급", "하청"), ("하도급",)),
+    (("보증",), ("입찰보증금", "계약보증금", "하자보증")),
+    (("인력", "인원"), ("투입인력", "참여인력", "핵심인력", "상주")),
+    (("실적",), ("수행실적", "유사실적", "실적증명")),
+    (("마감", "일정"), ("제출마감", "접수마감", "제안서접수", "제안설명회", "개찰")),
+)
+
+
+def question_terms(question: str) -> dict[str, float]:
+    """질문에서 공고문을 찾을 낱말과 그 무게. 주제 낱말이 있으면 공고문이 쓰는 표현을 함께 넣는다."""
+    terms: dict[str, float] = {}
+    for word in re.findall(r"[가-힣A-Za-z0-9]{2,}", question):
+        stem = _PARTICLE_RE.sub("", word)
+        for candidate in {word, stem}:
+            if len(candidate) >= 2 and candidate not in _ASK_WORDS:
+                terms[candidate] = 1.0
+    compact = "".join(question.split())
+    for keys, expansions in _TOPIC_TERMS:
+        if any(key in compact for key in keys):
+            for expansion in expansions:
+                terms[expansion] = 1.5
+    return terms
+
+
+def rank_passages(records: list, question: str, *, limit: int = MAX_PASSAGES, window: int = MAX_PASSAGE_CHARS) -> list:
+    """질문 낱말이 드물게, 여러 번 나오는 대목부터 고른다. 긴 대목은 낱말이 몰린 곳을 중심으로 잘라 준다.
+
+    색인(임베딩)이 없는 공고에서 쓰는 낱말 검색이다. 예전 낱말 검색은 걸린 대목을 문서 순서로 돌려줘, 앞에서 넷을 자르면
+    늘 공고문 첫머리만 남았다. 맞는 대목이 하나도 없으면 빈 목록이다 — 무관한 대목을 근거처럼 보여 주지 않는다.
+    """
+    terms = question_terms(question)
+    if not terms or not records:
+        return []
+    compacts = ["".join(record.text.split()) for record in records]
+    frequency = {term: sum(term in text for text in compacts) for term in terms}
+    weights = {term: weight * math.log(1 + len(records) / frequency[term]) for term, weight in terms.items() if frequency[term]}
+    if not weights:
+        return []
+    scored = []
+    for index, text in enumerate(compacts):
+        score = sum(weight * min(text.count(term), 3) for term, weight in weights.items())
+        if score > 0:
+            scored.append((score / math.sqrt(1 + len(text) / 1500), index))
+    out = []
+    for _score, index in sorted(scored, key=lambda pair: (-pair[0], pair[1]))[:limit]:
+        record = records[index]
+        text = record.text
+        if len(text) > window:
+            # 낱말은 띄어쓰기를 지운 글에서 찾고("제 출 서 류"), 자리는 원문 위치로 되돌려 가장 많이 몰린 창을 고른다.
+            positions = [offset for offset, char in enumerate(text) if not char.isspace()]
+            hits = sorted(positions[match.start()] for term in weights for match in re.finditer(re.escape(term), compacts[index]))
+            best_start, best_count = 0, -1
+            for start in hits:
+                count = sum(start <= hit < start + window for hit in hits)
+                if count > best_count:
+                    best_start, best_count = start, count
+            begin = max(0, min(best_start - 80, len(text) - window))
+            text = ("… " if begin else "") + text[begin:begin + window] + (" …" if begin + window < len(text) else "")
+        out.append(record.model_copy(update={"text": text}))
+    return out
+
+
 def document_passages(db, case, question: str) -> list[Any]:
     """현재 공고문에서 질문과 관련된 대목. 찾지 못하거나 색인을 쓸 수 없으면 빈 목록 — 대화는 브리핑만으로 계속한다."""
     from bidengine.rag.langchain_pipeline import retrieve_current
@@ -320,11 +434,15 @@ def document_passages(db, case, question: str) -> list[Any]:
         readiness = inspect_index(snapshot, os.getenv("DOCUMENT_RAG_INDEX_ROOT", "data/document-rag"), embeddings)
         if not embeddings.available:
             readiness.index = None
-        try:
-            passages, _details = retrieve_current(readiness, question)
-        except Exception:  # noqa: BLE001 - 질의 임베딩이 실패하면 낱말 검색으로
-            readiness.index = None
-            passages, _details = retrieve_current(readiness, question)
+        passages: list[Any] = []
+        if readiness.index is not None:
+            try:
+                passages, _details = retrieve_current(readiness, question)
+            except Exception:  # noqa: BLE001 - 질의 임베딩이 실패하면 낱말 검색으로
+                passages = []
+        if not passages:
+            # 색인이 없거나 못 쓴다. 현재 차수의 모든 대목에서 낱말로 고른다.
+            passages = rank_passages(list(readiness.source.records), question)
     except Exception:  # noqa: BLE001
         return []
     return [passage for passage in passages

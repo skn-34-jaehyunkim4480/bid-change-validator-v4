@@ -16,6 +16,8 @@ from apps.api.app.copilot.free_chat import (
     SCHEMA,
     SYSTEM_PROMPT,
     answer_free_question,
+    question_terms,
+    rank_passages,
     render_case_briefing,
 )
 from apps.api.app.copilot import router as copilot_router
@@ -25,7 +27,7 @@ def _version():
     notice = SimpleNamespace(title="정보보안 모니터링 용역", bid_notice_no="R26BK01748957",
                              announcing_institution_name="한국과학기술원", demanding_institution_name=None)
     return SimpleNamespace(notice=notice, bid_notice_order="000", version_number=1, contract_method="제한경쟁",
-                           bid_closed_at=datetime(2026, 10, 20, 14, 0, tzinfo=timezone.utc), estimated_price=Decimal("159090909"))
+                           bid_closed_at=datetime(2026, 10, 20, 5, 0, tzinfo=timezone.utc), estimated_price=Decimal("159090909"))
 
 
 def _requirement(key, type_, value, raw, **extra):
@@ -73,7 +75,7 @@ def test_briefing_carries_the_stored_verdict_reasons_and_quotes() -> None:
     analysis, judgment = _analysis_and_judgment("core_unmet")
     text = render_case_briefing(_version(), analysis, judgment)
     assert "[공고] 정보보안 모니터링 용역" in text and "R26BK01748957-000" in text
-    assert "입찰 마감: 2026-10-20 14:00" in text and "추정가격: 159,090,909원" in text
+    assert "입찰 마감: 2026-10-20 14:00 (한국 시간)" in text and "추정가격: 159,090,909원" in text
     assert "[참가자격 종합 판정] 핵심 자격 미충족" in text
     assert "충족 1 / 미충족 1 / 확인 필요 1" in text
     assert "[충족] 업종: 마. 정보통신공사업(업종코드:0036)으로 등록된 업체" in text
@@ -187,3 +189,44 @@ def test_copies_of_the_same_clause_appear_once_and_markdown_is_stripped() -> Non
     raw = newline.join(["## 결론", "저장된 판정은 **핵심 자격 미충족**입니다.", "- `0036` 업종을 확인하세요."])
     result = answer_free_question("참가할 수 있어?", "B", extractor=lambda *_: {"scope": "CASE", "answer": raw})
     assert result.answer == newline.join(["결론", "저장된 판정은 핵심 자격 미충족입니다.", "- 0036 업종을 확인하세요."])
+
+
+def test_briefing_carries_what_the_agency_entered_on_the_notice() -> None:
+    version = _version()
+    version.raw_json = {"cmmnSpldmdMethdNm": "(없음)공동수급불허", "opengDt": "2026-10-20 15:00:00", "asignBdgtAmt": "175000000",
+                        "sucsfbidMthdNm": "협상에의한계약", "bidMethdNm": "", "unknownKey": "x"}
+    text = render_case_briefing(version, None, None)
+    assert "공동수급: 공동수급불허 (나라장터 입력값)" in text          # 코드 자리 표시 '(없음)' 은 뗀다
+    assert "개찰 일시: 2026-10-20 15:00:00 (나라장터 입력값)" in text
+    assert "배정예산: 175,000,000원" in text and "낙찰자 결정 방법: 협상에의한계약" in text
+    assert "입찰 방식" not in text and "unknownKey" not in text       # 빈 값과 모르는 키는 적지 않는다
+    # 원본이 없는 차수(예전 데이터, 테스트 대역)도 그대로 동작한다.
+    assert "나라장터 입력값" not in render_case_briefing(_version(), None, None)
+
+
+def _record(text, chunk="c"):
+    from bidengine.rag.store import DocumentChunkMetadata, DocumentChunkRecord
+
+    fields = DocumentChunkMetadata.model_fields
+    values = {"notice_version_id": "v1", "document_id": "d1", "document_name": "제안요청서", "chunk_id": chunk}
+    for name, field in fields.items():
+        if name not in values and field.is_required():
+            values[name] = [] if "list" in str(field.annotation) else 0 if "int" in str(field.annotation) else ""
+    return DocumentChunkRecord(text=text, metadata=DocumentChunkMetadata(**values))
+
+
+def test_passages_are_ranked_by_the_question_not_by_document_order() -> None:
+    records = [
+        _record("(기관 입찰공고 26-711) 입찰공고", "c0"),
+        _record("1. 입찰에 부치는 사항 - 수요기관 - 건명 - 세부사항: 제안요청서 참조", "c1"),
+        _record("2. 입찰참가자격 - 보안관제 전문기업으로 지정된 업체", "c2"),
+        _record("Ⅳ. 제안서 안내 " + "일반 사항입니다. " * 120 + "5. 제 출 서 류 : 입찰참가신청서, 사업자등록증, 제안서 10부, 가격제안서", "c3"),
+        _record("Ⅲ. 평가 - 기술평가 90점, 가격평가 10점. 평가항목별 배점은 별표와 같다.", "c4"),
+    ]
+    assert "제출서류" in question_terms("제출 서류 뭐뭐 필요해?") and "뭐뭐" not in question_terms("제출 서류 뭐뭐 필요해?")
+    docs = rank_passages(records, "제출 서류 뭐뭐 필요해?")
+    assert docs[0].metadata.chunk_id == "c3"
+    assert "입찰참가신청서" in docs[0].text and len(docs[0].text) <= 1210      # 긴 대목은 낱말이 몰린 곳으로 잘라 준다
+    assert rank_passages(records, "제안서 평가 배점 어떻게 돼?")[0].metadata.chunk_id == "c4"
+    assert rank_passages(records, "오늘 날씨 어때?") == []                     # 맞는 대목이 없으면 근거를 붙이지 않는다
+    assert rank_passages([], "제출 서류") == []
