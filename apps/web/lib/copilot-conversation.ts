@@ -113,8 +113,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
       reasons: [
         { text: '예: “우리 회사가 참가할 수 있는지 알려줘”, “무엇을 확인해야 해?”, “첫 번째 조건 근거 보여줘”', requirement_key: null, evidence_refs: [] },
         { text: '비교 가능한 이전 버전이 있는 공고라면 변경된 자격요건도 확인할 수 있어요.', requirement_key: null, evidence_refs: [] },
-        { text: 'AI 상세 설명을 켜면 질문 이해와 자연스러운 설명을 위해 현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용해요.', requirement_key: null, evidence_refs: [] },
-        { text: '공고문 근거 답변을 켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용하고, 실제 인용 근거가 있는 경우에만 생성형 설명을 보여줘요.', requirement_key: null, evidence_refs: [] },
+        { text: '안내를 확인하면 답변을 위해 질문과 대화, 현재 판정 결과·요건 상태, 판정에 필요한 회사 프로필 정보, 현재 공고문을 외부 AI 처리에 사용해요.', requirement_key: null, evidence_refs: [] },
         { text: '답변 반영이나 재검증은 대화만으로 실행하지 않고, 제안을 확인한 뒤 명시적인 실행 버튼을 눌러야 합니다.', requirement_key: null, evidence_refs: [] },
       ],
       limitations: [], next_action: null,

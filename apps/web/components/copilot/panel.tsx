@@ -100,9 +100,8 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const [question, setQuestion] = useState('');
   // AI 처리 동의는 사용자가 직접 켠다. 한 번 고른 값은 이 브라우저에 기억해, 패널을 열 때마다 다시 켜지 않아도 된다.
   const [semanticProcessing, setSemanticProcessing] = useRememberedConsent('semantic');
-  const [documentConsent, setDocumentProcessing] = useRememberedConsent('document');
-  // 공고문 근거 답변은 AI 사용에 동의한 뒤에만 켤 수 있다. 스위치가 보이지 않는 동안에는 꺼진 것으로 다룬다.
-  const documentProcessing = semanticProcessing && documentConsent;
+  // 안내를 확인하면 공고문도 함께 읽어 답한다. 공고문은 공개 문서라 따로 묻지 않는다(2026-10-12 사용자 결정).
+  const documentProcessing = semanticProcessing;
   const [jobsOpen, setJobsOpen] = useState({ page, open: true });
   const [catalogState, setCatalogState] = useState<{ caseId: string; catalog: GuidedJobCatalog | null; error: string }>({ caseId: '', catalog: null, error: '' });
   const end = useRef<HTMLDivElement>(null);
@@ -134,22 +133,14 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <h3>{caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
         <p>저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.</p>
       </div>}
-      {/* AI 사용 동의는 처음 한 번만 묻는다. 동의한 뒤에는 설명 상자를 치우고 한 줄 설정만 남긴다(끄면 다시 묻는다). */}
-      {caseId && !semanticProcessing && <div className="copilot-processing-options" aria-label="AI 처리 옵션">
-        <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="AI 상세 설명 사용">
+      {/* 사용 전 안내는 처음 한 번만 보인다. 확인하면 이 브라우저에서 다시 묻지 않는다. */}
+      {caseId && !semanticProcessing && <div className="copilot-processing-options" aria-label="사용 전 안내">
+        <p className="copilot-consent-notice">이 챗봇을 사용하면 회사 정보가 외부 API로 전달될 수 있습니다.</p>
+        <label className="copilot-consent-check" htmlFor="copilot-semantic-processing">
           <input id="copilot-semantic-processing" type="checkbox" checked={semanticProcessing} disabled={state.busy}
             onChange={event => setSemanticProcessing(event.target.checked)} />
-          <span><strong>AI 상세 설명 사용</strong><small>켜면 질문·관련 대화·현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용합니다. AI는 핵심 요건 판정을 새로 만들거나 법적 참가 가능 여부를 보증하지 않습니다. 한 번 켜면 이 브라우저에서 다시 묻지 않습니다.</small></span>
+          <span>이해하였습니다.</span>
         </label>
-      </div>}
-      {caseId && semanticProcessing && <div className="copilot-settings-row" aria-label="AI 처리 옵션">
-        <label className="copilot-inline-toggle" htmlFor="copilot-document-processing"
-          title="켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용해 근거 답변을 생성합니다. 회사 프로필·저장 입력은 문서 검색 경로에 보내지 않습니다.">
-          <input id="copilot-document-processing" type="checkbox" checked={documentProcessing} disabled={state.busy}
-            onChange={event => setDocumentProcessing(event.target.checked)} />
-          <span>공고문 근거 답변 사용</span>
-        </label>
-        <button type="button" className="copilot-consent-off" disabled={state.busy} onClick={() => { setSemanticProcessing(false); setDocumentProcessing(false); }}>AI 설명 끄기</button>
       </div>}
       {caseId && catalog && <section className="copilot-jobs" aria-label="검증된 업무 질문">
         <button type="button" className="copilot-jobs-toggle" aria-expanded={jobsExpanded} onClick={() => setJobsOpen({ page, open: !jobsExpanded })}>
@@ -222,8 +213,8 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="공고나 우리 회사 참가자격에 대해 질문해 주세요"
-          disabled={!caseId || state.busy} />
+          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : '공고나 우리 회사 참가자격에 대해 질문해 주세요'}
+          disabled={!caseId || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
       <small>Enter 전송 · Shift+Enter 줄바꿈</small>

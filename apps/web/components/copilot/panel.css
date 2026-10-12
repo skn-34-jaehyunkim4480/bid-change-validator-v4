@@ -23,9 +23,7 @@
 /* 자유 대화 답변은 모델이 쓴 줄바꿈을 그대로 보여 준다. */
 .copilot-free-answer { white-space: pre-wrap; }
 
-/* 동의한 뒤의 한 줄 설정: 공고문 근거 답변 켜기와 AI 설명 끄기. */
-.copilot-settings-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 2px 0;font-size:12px;color:var(--product-muted)}
-.copilot-inline-toggle{display:flex;align-items:center;gap:7px;min-height:28px;color:var(--product-body);cursor:pointer}
-.copilot-consent-off{border:0;background:none;padding:4px 2px;font-size:11px;color:var(--product-muted);text-decoration:underline;cursor:pointer}
-.copilot-consent-off:hover{color:var(--product-body)}
-.copilot-consent-off:disabled{cursor:default;opacity:.5}
+/* 사용 전 안내: 한 문장과 '이해하였습니다' 체크. 확인하면 사라진다. */
+.copilot-processing-options{display:grid;gap:10px;padding:14px;border:1px solid var(--product-line);border-radius:14px;background:var(--product-tint-2)}
+.copilot-consent-notice{margin:0;font-size:13px;line-height:19px;color:var(--product-body)}
+.copilot-consent-check{display:flex;align-items:center;gap:8px;min-height:28px;font-size:13px;font-weight:600;color:var(--product-body);cursor:pointer}
