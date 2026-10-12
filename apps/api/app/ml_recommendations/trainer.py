@@ -7,6 +7,7 @@ import json
 import math
 import random
 import statistics
+import subprocess
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -234,30 +235,49 @@ def main():
     seed=args.seed
     test=grouped(rows,"test")
     baseline=rank_metrics(test,baseline_score)
+    started=time.perf_counter()
     ml,lightgbm_curve=lgb_fit(rows,out,seed)
+    lightgbm_seconds=time.perf_counter()-started
     ml_result=rank_metrics(test,lambda r:lgb_score(ml,r))
+    started=time.perf_counter()
     training=deep_fit(rows,out,seed,args.device,args.epochs)
+    encoder_seconds=time.perf_counter()-started
     training["lightgbm"]={"validation_curve":lightgbm_curve}
     scores={"baseline_rule":baseline,"lightgbm":ml_result}
     for name in ("bi_encoder","cross_encoder"):
         scores[name]=rank_metrics(test,deep_scorer(load_deep(out,name)))
     files=["lightgbm.txt","bi_encoder.pt","cross_encoder.pt"]
     sha={name:hashlib.sha256((out/name).read_bytes()).hexdigest() for name in files}
+    git_result=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,
+                              text=True,check=False)
+    git_sha=git_result.stdout.strip() if git_result.returncode==0 else "unavailable"
     report={"dataset_version":dataset_info["dataset_version"],"dataset_sha256":actual_hash,
             "evaluation_scope":"SYNTHETIC ONLY - not real ranking accuracy" if not dataset_info["reviewed_labels"] else "MIXED LABEL ORIGINS - report per origin before claiming real accuracy",
             "holdout_queries":len(test),"device":args.device,"seed":seed,"epochs":args.epochs,
-            "model_sha256":sha,"training":training,"metrics":scores,
+            "git_sha":git_sha,"model_sha256":sha,
+            "model_bytes":{name:(out/name).stat().st_size for name in files},
+            "training_seconds":{"lightgbm":lightgbm_seconds,"encoders":encoder_seconds},
+            "training":training,"metrics":scores,
             "leakage":audit(rows),"aws_requests":0,"aws_download_bytes":0,"paid_services_changed":False}
     (out/"evaluation.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
     if args.mlflow_local:
         import mlflow
         mlflow.set_tracking_uri("sqlite:///" + (out/"mlflow.db").resolve().as_posix())
         with mlflow.start_run(run_name="bidcheck-offline-pseudo-eval"):
-            mlflow.log_params(dict(seed=seed,epochs=args.epochs,dataset_sha256=actual_hash,device=args.device))
+            mlflow.log_params(dict(seed=seed,epochs=args.epochs,dataset_sha256=actual_hash,
+                                   device=args.device,git_sha=git_sha,
+                                   evaluation_scope=report["evaluation_scope"]))
+            for name,digest in sha.items():
+                mlflow.log_param("sha256_"+name.replace(".","_"),digest)
+            for name,seconds in report["training_seconds"].items():
+                mlflow.log_metric("training_seconds_"+name,seconds)
             for model,metrics in scores.items():
                 for key,value in metrics.items():
                     if isinstance(value,(int,float)):
                         mlflow.log_metric(model+"_"+key.replace("@","_"),value)
+            mlflow.log_artifact(str(out/"evaluation.json"))
+            for name in files:
+                mlflow.log_artifact(str(out/name),artifact_path="local_models")
     print(json.dumps(report,ensure_ascii=False,indent=2))
 if __name__=="__main__":
     main()
