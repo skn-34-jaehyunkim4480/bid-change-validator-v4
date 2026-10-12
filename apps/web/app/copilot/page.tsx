@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { CopilotMascot } from '@/components/copilot/mascot';
-import { PanelBody } from '@/components/copilot/panel';
+import { PanelBody, useScrollbarWhileScrolling } from '@/components/copilot/panel';
 import { useCopilot } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { buttonVariants } from '@/components/ui/button';
@@ -22,21 +22,7 @@ export default function CopilotPage() {
   const [error, setError] = useState('');
   const [listOpen, setListOpen] = useState(true);
   const frame = useRef<HTMLDivElement>(null);
-  // 스크롤 막대는 스크롤하는 동안에만 보인다: 스크롤이 일어난 요소에 표시를 달고 잠시 뒤에 뗀다.
-  useEffect(() => {
-    const root = frame.current;
-    if (!root) return;
-    const timers = new Map<Element, number>();
-    const onScroll = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      target.dataset.scrolling = '';
-      window.clearTimeout(timers.get(target));
-      timers.set(target, window.setTimeout(() => { delete target.dataset.scrolling; timers.delete(target); }, 900));
-    };
-    root.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    return () => { root.removeEventListener('scroll', onScroll, { capture: true }); timers.forEach(timer => window.clearTimeout(timer)); };
-  }, []);
+  useScrollbarWhileScrolling(frame);
   const { store } = useCopilot(requested);
   // 어느 검토 건에 대화가 있는지. 저장소가 바뀔 때마다 다시 읽는다.
   const talkedKey = useSyncExternalStore(store.subscribe, () => store.caseIds().join(','), () => '');

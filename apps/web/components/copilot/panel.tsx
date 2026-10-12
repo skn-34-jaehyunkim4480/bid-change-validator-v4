@@ -2,7 +2,7 @@
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { ChevronDown, Maximize2, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopilotNavigationLink } from './navigation-link';
@@ -25,6 +25,27 @@ const SCREEN_NAMES: Array<[string, string]> = [
 export const screenNameOf = (pathname: string) => SCREEN_NAMES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
 const noJudgmentCodes = ['CURRENT_JUDGMENT_REQUIRED', 'QUALIFICATION_JUDGMENT_NOT_FOUND', 'JUDGMENT_NOT_FOUND'];
 const href = (page: string, caseId: string) => `${page}?caseId=${encodeURIComponent(caseId)}`;
+
+/**
+ * 스크롤 막대를 스크롤하는 동안에만 보이게 한다: 스크롤이 일어난 요소에 data-scrolling 을 달고 잠시 뒤에 뗀다.
+ * 막대의 색은 panel.css 가 그 표시를 보고 정한다.
+ */
+export function useScrollbarWhileScrolling(root: RefObject<HTMLElement | null>, active: unknown = true) {
+  useEffect(() => {
+    const element = root.current;
+    if (!element || !active) return;
+    const timers = new Map<Element, number>();
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      target.dataset.scrolling = '';
+      window.clearTimeout(timers.get(target));
+      timers.set(target, window.setTimeout(() => { delete target.dataset.scrolling; timers.delete(target); }, 900));
+    };
+    element.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => { element.removeEventListener('scroll', onScroll, { capture: true }); timers.forEach(timer => window.clearTimeout(timer)); };
+  }, [root, active]);
+}
 
 export function CopilotPanel() {
   const pathname = usePathname();
@@ -50,6 +71,7 @@ export function CopilotPanel() {
     media.addEventListener('change', display);
     return () => { media.removeEventListener('change', display); element.close(); };
   }, [open, page]);
+  useScrollbarWhileScrolling(dialog, page);
   // 창 크기는 React 상태가 아니라 dialog 의 CSS 변수로 둔다 — 끄는 동안 다시 그리지 않고, 저장된 크기는 이 브라우저에 남는다.
   useEffect(() => {
     const element = dialog.current;
@@ -282,7 +304,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
           </section>;
         })}</div>}
       </section>}
-      {caseId && !catalog && !catalogError && <p className="copilot-limitation">검증된 질문을 확인하고 있어요…</p>}
+      {caseId && !general && !catalog && !catalogError && <p className="copilot-limitation">검증된 질문을 확인하고 있어요…</p>}
       {catalogError && <p role="alert" className="copilot-error">{catalogError}</p>}
       {state.focus && <button type="button" className="copilot-focus" onClick={() => store.focus(caseId, null)}>선택한 요건 해제 · 전체 보기</button>}
       <div role="log" aria-label="공고 도우미 대화" aria-live="polite">
@@ -336,7 +358,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : general ? '사이트 쓰는 법이나 입찰에 대해 질문해 주세요' : '공고나 우리 회사 참가자격에 대해 질문해 주세요'}
+          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : general ? '무엇이든 물어보세요' : '이 공고에 대해 물어보세요'}
           disabled={!caseId || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
       </div>

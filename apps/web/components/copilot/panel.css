@@ -119,6 +119,18 @@
 .copilot-panel{inset:auto 24px 24px auto;width:var(--copilot-w,480px);height:min(var(--copilot-h,820px),calc(100dvh - 48px))}
 }
 
-/* 전용 화면의 스크롤 막대는 스크롤하는 동안에만 잠깐 보인다(app/copilot/page.tsx 가 data-scrolling 을 붙인다). */
-.copilot-page-list ul,.copilot-page-chat .copilot-content{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color .3s}
-.copilot-page-list ul[data-scrolling],.copilot-page-chat .copilot-content[data-scrolling]{scrollbar-color:color-mix(in srgb,var(--product-muted) 55%,transparent) transparent}
+/* 대화창과 대화 목록의 스크롤 막대는 스크롤하는 동안에만 잠깐 보인다(useScrollbarWhileScrolling 이 data-scrolling 을 붙인다). */
+.copilot-page-list ul,.copilot-content{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color .3s}
+.copilot-page-list ul[data-scrolling],.copilot-content[data-scrolling]{scrollbar-color:color-mix(in srgb,var(--product-muted) 55%,transparent) transparent}
+
+/*
+  입력창은 크기를 손으로 바꾸지 않는다(2026-10-12). 끌어 늘리는 손잡이와 스크롤 막대를 없애고, 쓴 만큼만 자란다.
+  '일반 도우미' 표시는 줄이 바뀌지 않게 한다.
+*/
+.copilot-input textarea{resize:none;scrollbar-width:none;field-sizing:content;max-height:120px}
+.copilot-input textarea::-webkit-scrollbar{display:none}
+.copilot-mode{flex:none;white-space:nowrap}
+.copilot-header h2{flex:none}
+
+/* 좁은 창(1024px 미만)에서도 패널을 넉넉하게: 폭 400 → 480, 높이 720 → 820. */
+@media(max-width:1023px){.copilot-panel{width:min(480px,100vw);height:min(820px,95dvh)}}
