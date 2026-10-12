@@ -48,6 +48,19 @@ def grouped(rows, split):
             data[row["query_id"]].append(row)
     return [data[k] for k in sorted(data)]
 
+
+def pairwise_training_examples(rows):
+    """Only grades 2/3 are relevant; require a grade-0 contrast per query."""
+    pairs=[]
+    for group in grouped(rows,"train"):
+        positive=next((r for r in group if r["label"]>=2),None)
+        negative=next((r for r in group if r["label"]==0),None)
+        if positive is not None and negative is not None:
+            pairs.append((positive,negative))
+    if not pairs:
+        raise ValueError("No positive/negative reviewed training pairs")
+    return pairs
+
 def lgb_fit(rows, output, seed):
     import lightgbm as lgb
     groups=grouped(rows,"train")
@@ -139,6 +152,7 @@ def make_models():
     return Bi(),Cross()
 
 def deep_fit(rows,output,seed,device="cpu",epochs=2):
+    pairs=pairwise_training_examples(rows)
     import torch
     torch.set_num_threads(min(4,torch.get_num_threads()))
     random.seed(seed)
@@ -147,7 +161,6 @@ def deep_fit(rows,output,seed,device="cpu",epochs=2):
     if device=="cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA explicitly requested, but no GPU is available")
     use_device=torch.device(device)
-    train=grouped(rows,"train")
     bi,cross=make_models()
     logs={}
     for name,model in (("bi_encoder",bi),("cross_encoder",cross)):
@@ -156,13 +169,9 @@ def deep_fit(rows,output,seed,device="cpu",epochs=2):
         curve=[]
         rng=random.Random(seed)
         for epoch in range(epochs):
-            rng.shuffle(train)
+            rng.shuffle(pairs)
             losses=[]
-            for group in train:
-                pos=next((r for r in group if r["label"]>=min_label),None)
-                neg=next((r for r in group if r["label"]==0),None)
-                if pos is None or neg is None:
-                    continue
+            for pos,neg in pairs:
                 q=torch.tensor([encode(pos["query_text"])]*2,dtype=torch.long,device=use_device)
                 docs=torch.tensor([encode(pos["notice_text"]),encode(neg["notice_text"])],dtype=torch.long,device=use_device)
                 model.train()
