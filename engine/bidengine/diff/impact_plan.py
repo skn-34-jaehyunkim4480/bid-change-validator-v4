@@ -56,6 +56,40 @@ def plan_requirement_impacts(
         if any(req.notice_version_id != snapshot.notice_version_id for req in requirements):
             raise ValueError("requirement belongs to a different source version")
     changes = diff_requirements(baseline, current)
+    # Requirement group IDs may be renamed between extraction runs.  Compare
+    # the actual member partition after semantic matching instead of the ID.
+    # This also detects split/merge/reassignment with unchanged individual slots.
+    baseline_to_current = {
+        change.baseline_key: change.current_key for change in changes
+        if change.baseline_key is not None and change.current_key is not None
+    }
+    matched_current = set(baseline_to_current.values())
+    baseline_groups: dict[str, set[str]] = {}
+    current_groups: dict[str, set[str]] = {}
+    for req in baseline:
+        if req.requirement_group_key:
+            baseline_groups.setdefault(req.requirement_group_key, set()).add(req.requirement_key)
+    for req in current:
+        if req.requirement_group_key:
+            current_groups.setdefault(req.requirement_group_key, set()).add(req.requirement_key)
+    regrouped_current_keys: set[str] = set()
+    for change in changes:
+        old, new = change.baseline, change.current
+        if old is None or new is None:
+            continue
+        before_members = baseline_groups.get(old.requirement_group_key, {old.requirement_key})
+        after_members = current_groups.get(new.requirement_group_key, {new.requirement_key})
+        mapped_before = {
+            ("matched", baseline_to_current[key]) if key in baseline_to_current else ("removed", key)
+            for key in before_members
+        }
+        mapped_after = {
+            ("matched", key) if key in matched_current else ("added", key)
+            for key in after_members
+        }
+        if mapped_before != mapped_after:
+            regrouped_current_keys.add(new.requirement_key)
+
     changed_groups = {
         change.current.requirement_group_key for change in changes
         if change.change_type in {"ADDED", "MODIFIED"}
@@ -108,8 +142,12 @@ def plan_requirement_impacts(
             action, reason = "REVIEW", "same_source_conflicting_extractions"
         elif change.change_type != "UNCHANGED":
             action, reason = "RECALCULATE", "requirement_changed"
+        elif new.requirement_key in regrouped_current_keys:
+            action, reason = (("REVIEW", "same_source_conflicting_extractions") if same_document
+                              else ("RECALCULATE", "logical_group_membership_changed"))
         elif new.requirement_group_key in changed_groups:
-            action, reason = "RECALCULATE", "logical_group_changed"
+            action, reason = (("REVIEW", "same_source_conflicting_extractions") if same_document
+                              else ("RECALCULATE", "logical_group_changed"))
         elif new.requirement_key not in grounded_current_keys or not new.evidence_keys:
             action, reason = "REVIEW", "current_source_evidence_unverified"
         elif not lineage_safe:
