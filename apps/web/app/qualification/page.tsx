@@ -9,11 +9,12 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { DocumentSourceViewer } from '@/components/product/document-source-viewer';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, GAP_CATEGORY_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, CHANGE_TYPE_LABEL, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, GAP_CATEGORY_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -134,6 +135,14 @@ function compactRaw(text: string | null | undefined) {
 /** 요건이 실제로 가리키는 근거 수. 분석은 읽어 본 조항마다 위치를 남기므로 evidence 전체를 세면 요건과 무관한 수백 건이 된다. */
 function citedEvidenceCount(analysis: QualificationAnalysisRun) {
   return new Set(analysis.requirements.flatMap((item) => item.evidence_keys)).size;
+}
+
+function changeDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+}
+
+function changeMoney(value: number | null | undefined) {
+  return value == null ? '-' : `${value.toLocaleString()} 원`;
 }
 
 function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefined) {
@@ -519,6 +528,39 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     않았을 뿐이라 충족된 것이 아니다. 왜 빠졌는지(공고가 조건을 뺐는지, 분석이 놓쳤는지)를 가르는 건
     원문을 나란히 놓는 변경 이력의 일이라, 여기서는 사실만 알리고 그쪽으로 보낸다.
   */
+  /*
+    변경공고라면 무엇이 달라졌는지가 이 화면에서 가장 먼저 볼 내용이다(2026-10-12). 판정 요약보다 위에 둔다.
+    공고 값(마감·금액·계약방법)은 수집한 두 차수를 그대로 비교하고, 자격 요건은 저장된 두 분석을 비교한다.
+    요건의 추가·삭제는 공고가 바꾼 것일 수도, 분석이 다르게 읽은 것일 수도 있어 단정하지 않는다 — 원문을 나란히
+    보는 일은 변경 이력 화면에 맡긴다.
+  */
+  const changeDigest = useMemo(() => {
+    if (!baselineVersion || !currentVersion || baselineVersion.id === currentVersion.id) return null;
+    const fields = [
+      { label: '입찰서 제출마감', before: changeDate(baselineVersion.bid_closed_at), after: changeDate(currentVersion.bid_closed_at) },
+      { label: '추정가격', before: changeMoney(baselineVersion.estimated_price), after: changeMoney(currentVersion.estimated_price) },
+      { label: '배정예산', before: changeMoney(baselineVersion.allocated_budget), after: changeMoney(currentVersion.allocated_budget) },
+      { label: '계약방법', before: baselineVersion.contract_method ?? '-', after: currentVersion.contract_method ?? '-' },
+    ].filter((row) => row.before !== row.after);
+    const compared = Boolean(baselineAnalysisDetail && analysisDetail);
+    const requirements = compared
+      ? diffCanonicalRequirements(baselineAnalysisDetail!.requirements, analysisDetail!.requirements)
+        .filter((item) => item.change_type !== 'UNCHANGED')
+        .map((item) => ({
+          key: item.identity,
+          changeType: item.change_type,
+          typeLabel: REQUIREMENT_TYPE_LABEL[(item.current ?? item.baseline)?.type ?? ''] ?? (item.current ?? item.baseline)?.type ?? '요건',
+          before: compactRaw(item.baseline?.raw),
+          after: compactRaw(item.current?.raw),
+          // 구조화된 값이 같으면 글머리 기호나 법령 인용처럼 원문 표현만 달라진 것이다.
+          wordingOnly: Boolean(item.baseline && item.current && sameStructuredRequirement(item.baseline, item.current)),
+        }))
+        // 값이 실제로 달라진 것을 먼저 보여 준다.
+        .sort((a, b) => Number(a.wordingOnly) - Number(b.wordingOnly))
+      : [];
+    return { fields, requirements, compared };
+  }, [baselineVersion, currentVersion, baselineAnalysisDetail, analysisDetail]);
+
   const versionRequirementGap = useMemo(() => {
     if (!canViewBaseline || !baselineAnalysisDetail || !analysisDetail) return null;
     // requirement_key는 차수마다 새로 만들어져서 같은 요건이라도 값이 달라진다.
@@ -865,6 +907,52 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {/* ── 1 공고 · 검토 건 ── */}
             {caseHeader}
             <CaseTabs caseId={activeCase.id} active="qualification" />
+
+            {/* ── 1-0 변경공고에서 달라진 것: 변경공고라면 가장 먼저 보여 준다 ── */}
+            {changeDigest && (
+              <section aria-labelledby="change-digest-title" className="mt-6 rounded-[20px] border border-[#1c348f] bg-[#f3f6ff] px-6 py-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 id="change-digest-title" className="text-[19px] font-extrabold tracking-[-0.02em] text-[#1c348f]">
+                    변경공고에서 달라진 것
+                    <span className="ml-2 text-[14px] font-semibold text-[var(--product-muted)]">기준 v{activeCase.baseline_version_number} → 현재 v{activeCase.current_version_number}</span>
+                  </h2>
+                  <NavigationLink href={`/changes?caseId=${activeCase.id}`} className="text-[14px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">변경 이력에서 원문 나란히 보기</NavigationLink>
+                </div>
+                {changeDigest.fields.length === 0 && changeDigest.requirements.length === 0 ? (
+                  <p className="mt-3 text-[15px] leading-6">
+                    {changeDigest.compared
+                      ? '주요 공고 값(마감·금액·계약방법)과 자격 요건에서 달라진 것을 찾지 못했습니다.'
+                      : '주요 공고 값(마감·금액·계약방법)은 달라지지 않았습니다. 자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.'}
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-[#d9e0f7]">
+                    {changeDigest.fields.map((row) => (
+                      <li key={row.label} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5 text-[15px]">
+                        <span className="rounded-full bg-[#1c348f] px-2.5 py-0.5 text-[12px] font-bold text-white">공고 값</span>
+                        <strong className="min-w-[110px]">{row.label}</strong>
+                        <span className="text-[var(--product-muted)] line-through">{row.before}</span>
+                        <span aria-hidden>→</span>
+                        <strong>{row.after}</strong>
+                      </li>
+                    ))}
+                    {changeDigest.requirements.slice(0, 6).map((row) => (
+                      <li key={row.key} className="py-2.5 text-[15px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[row.changeType]}</span>
+                          <strong>{row.typeLabel}</strong>
+                          {row.wordingOnly && <span className="text-[13px] text-[var(--product-muted)]">조건 값은 같고 원문 표현만 다름</span>}
+                        </div>
+                        {row.before && <p className={`mt-1 leading-6 ${row.after ? 'text-[var(--product-muted)] line-through' : 'text-[var(--product-muted)]'}`}>{row.after ? '' : '기준 차수: '}{row.before}</p>}
+                        {row.after && <p className="mt-0.5 leading-6">{row.before ? '→ ' : '현재 차수: '}{row.after}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {changeDigest.requirements.length > 6 && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건 변화 {changeDigest.requirements.length}건 중 6건만 보여 줍니다. 나머지는 변경 이력에서 확인해 주세요.</p>}
+                {changeDigest.requirements.length > 0 && <p className="mt-2 text-[13px] leading-5 text-[var(--product-muted)]">신설·삭제로 표시된 요건은 공고가 바꾼 것일 수도, 분석이 차수마다 다르게 읽은 것일 수도 있습니다. 원문으로 확인해 주세요.</p>}
+                {!changeDigest.compared && (changeDigest.fields.length > 0) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.</p>}
+              </section>
+            )}
 
             {/* ── 1-1 어느 차수 기준으로 보는가 ── */}
             {canViewBaseline && (
