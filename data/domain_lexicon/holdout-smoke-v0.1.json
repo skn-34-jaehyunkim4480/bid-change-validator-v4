@@ -1,0 +1,15 @@
+{
+  "evaluation_id": "BCV4-03-002-HOLDOUT-DIAGNOSTIC",
+  "status": "FROZEN_SMALL_SMOKE_NOT_E3",
+  "notice_no": "R26BK01705963",
+  "source_order": "000",
+  "input_case_path": "eval/golden/qualification-real-v0.1/cases/C01/case.json",
+  "evidence_fixture_path": "eval/golden/retrieval-v0.1/spans.json",
+  "questions": [
+    {"query_id":"Q01", "query":"사업금액 20억원 미만 입찰참가 제한", "span_ids":["POS-001"]},
+    {"query_id":"Q02", "query":"소프트웨어사업 컴퓨터관련서비스사업 업종코드", "span_ids":["POS-002"]},
+    {"query_id":"Q03", "query":"정보시스템개발서비스 직접생산확인증명서", "span_ids":["POS-003"]},
+    {"query_id":"Q04", "query":"소프트웨어사업자로 신고한 업체 조건", "span_ids":["POS-004"]}
+  ],
+  "warning": "Four researcher-written queries, one notice, four positives and two known traps. Not representative, not a replacement for E3, and no product performance claim permitted."
+}

@@ -1,0 +1,17 @@
+{
+  "work_id": "BCV4-03-002",
+  "status": "AUTOMATED_TRIAGE_NOT_HUMAN_REVIEW",
+  "approved_synonym_count": 0,
+  "records": [
+    {"id":"R01","concept_ids":["hq-location","business-location"],"risk":"DISTINCT_LEGAL_LOCATION_ACTORS","disposition":"DO_NOT_MERGE","review_status":"UNREVIEWED"},
+    {"id":"R02","concept_ids":["sm-business","small-business","micro-business"],"risk":"COMPANY_SIZE_SUBSET_IS_NOT_EQUIVALENCE","disposition":"DO_NOT_EXPAND","review_status":"UNREVIEWED"},
+    {"id":"R03","concept_ids":["performance-history","delivery-history"],"risk":"PERFORMANCE_TYPE_MISMATCH","disposition":"DO_NOT_MERGE","review_status":"UNREVIEWED"},
+    {"id":"R04","concept_ids":["registration","certification"],"risk":"REGISTRATION_NOT_CERTIFICATION","disposition":"DO_NOT_MERGE","review_status":"UNREVIEWED"},
+    {"id":"R05","concept_ids":["lookback-years"],"surface_forms":["최근 3년","최근 5년"],"risk":"DIFFERENT_NUMERIC_DURATION_IN_SAME_CONCEPT_GROUP","disposition":"BLOCK_SYNONYM_EXPANSION","review_status":"UNREVIEWED"},
+    {"id":"R06","surface_forms":["조사대상건설업"],"risk":"SUSPECT_AUTOMATIC_INDUSTRY_EXTRACTION_JOINED_TEXT","disposition":"REVIEW_OR_REJECT_AUTO_CANDIDATE","review_status":"UNREVIEWED"},
+    {"id":"R07","concept_ids":["sm-business"],"surface_forms":["중소기업","중소기업확인서"],"risk":"COMPANY_STATUS_VS_SUPPORTING_DOCUMENT","disposition":"DO_NOT_MERGE_AS_LEGAL_SYNONYM","review_status":"UNREVIEWED"},
+    {"id":"R08","concept_ids":["bid-eligibility"],"surface_forms":["입찰참가자격","견적제출 참가자격"],"risk":"DIFFERENT_PROCEDURE_CONTEXT","disposition":"DO_NOT_EXPAND","review_status":"UNREVIEWED"},
+    {"id":"R09","concept_ids":["any-one"],"surface_forms":["어느 하나","또는"],"risk":"BOOLEAN_SCOPE_CONTEXT_DEPENDENT","disposition":"KEEP_ORIGINAL_SCOPE","review_status":"UNREVIEWED"},
+    {"id":"R10","concept_ids":["specification"],"surface_forms":["규격서","시방서"],"risk":"DOCUMENT_PURPOSE_NOT_ALWAYS_IDENTICAL","disposition":"SEARCH_RELATED_ONLY_IF_REVIEWED","review_status":"UNREVIEWED"}
+  ]
+}
