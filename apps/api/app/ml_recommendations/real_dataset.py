@@ -16,6 +16,25 @@ from urllib.parse import urlsplit
 from uuid import UUID
 from .cost_guard import require_isolated_data_url
 
+
+# Match the recommendation API's current-notice window. Collection time is not
+# a substitute for posting time when constructing a chronological holdout.
+ACTIVE_CANDIDATE_SQL = """SELECT n.id::text AS notice_id, n.bid_notice_no, n.title,
+    n.business_type, n.announcing_institution_name AS institution,
+    v.id::text AS notice_version_id,v.version_number,
+    v.posted_at::text AS posted_at,
+    v.contract_method,v.allocated_budget::text AS budget,
+    v.raw_json ->> 'rgstDt' AS registration_date
+    FROM bid_notices n JOIN bid_notice_versions v
+        ON v.notice_id=n.id AND v.is_current=TRUE
+    WHERE (v.bid_closed_at > now()
+        OR (v.bid_closed_at IS NULL AND v.posted_at IS NOT NULL
+            AND v.posted_at <= now() AND v.posted_at > now() - INTERVAL '40 days'))
+      AND lower(coalesce(v.notice_kind,n.notice_kind,'')) NOT LIKE '%%취소%%'
+      AND lower(coalesce(v.notice_kind,n.notice_kind,'')) NOT LIKE '%%cancel%%'
+      AND lower(coalesce(v.notice_kind,n.notice_kind,'')) NOT LIKE '%%무효%%'
+    ORDER BY v.posted_at DESC NULLS LAST,n.id LIMIT %s"""
+
 def _digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -44,19 +63,16 @@ def local_snapshot(db_url, max_notices=500, max_companies=30):
     with psycopg.connect(db_url,connect_timeout=5,options="-c default_transaction_read_only=on",row_factory=dict_row) as db:
         with db.cursor() as cur:
             cur.execute("SET TRANSACTION READ ONLY")
-            cur.execute("""SELECT n.id::text AS notice_id, n.bid_notice_no, n.title,
-                n.business_type, n.announcing_institution_name AS institution,
-                v.id::text AS notice_version_id,v.version_number,
-                COALESCE(v.posted_at,v.created_at)::text AS posted_at,
-                v.contract_method,v.allocated_budget::text AS budget,
-                v.raw_json ->> 'rgstDt' AS registration_date
-                FROM bid_notices n JOIN bid_notice_versions v
-                    ON v.notice_id=n.id AND v.is_current=TRUE
-                ORDER BY COALESCE(v.posted_at,v.created_at) DESC,n.id LIMIT %s""",(max_notices,))
+            cur.execute(ACTIVE_CANDIDATE_SQL,(max_notices,))
             notices=list(cur.fetchall())
-            cur.execute("""SELECT notice_id::text,previous_notice_id::text FROM notice_relations
-                WHERE match_confidence='CONFIRMED' AND previous_notice_id IS NOT NULL LIMIT 3000""")
-            edges=[tuple(x.values()) for x in cur.fetchall()]
+            notice_ids=[n["notice_id"] for n in notices]
+            edges=[]
+            if notice_ids:
+                cur.execute("""SELECT notice_id::text,previous_notice_id::text FROM notice_relations
+                    WHERE match_confidence='CONFIRMED' AND previous_notice_id IS NOT NULL
+                    AND notice_id=ANY(%s::uuid[]) AND previous_notice_id=ANY(%s::uuid[])""",
+                    (notice_ids,notice_ids))
+                edges=[tuple(x.values()) for x in cur.fetchall()]
             cur.execute("""SELECT id::text AS company_id,name,region_code,region_name,company_size
                 FROM companies ORDER BY id LIMIT %s""",(max_companies,))
             companies=list(cur.fetchall())
