@@ -76,3 +76,28 @@
 .copilot-page-chat .copilot-input>*{max-width:920px;margin-inline:auto;width:100%}
 .copilot-page-empty{display:grid;place-items:center;gap:8px;height:100%;padding:24px;text-align:center;color:var(--product-muted)}
 @media(max-width:1023px){.copilot-page{grid-template-columns:1fr;height:auto;min-height:0}.copilot-page-list{max-height:220px}.copilot-panel.copilot-page-chat{height:min(640px,80dvh);border-radius:20px}}
+
+/*
+  전용 화면을 한 장의 면으로(2026-10-12). 목록과 대화를 테두리 상자로 나누지 않고, 화면 높이를 다 쓰며,
+  답변은 말풍선 없이 본문처럼 놓는다. 바닥글은 이 화면에서 감춘다 — 대화창이 화면 끝까지 간다.
+*/
+.app-shell:has(.copilot-page-shell) .app-footer{display:none}
+.app-shell:has(.copilot-page-shell) .app-shell-content{background:var(--product-surface)}
+.copilot-page-shell{width:100%;padding:0}
+.copilot-page{gap:0;grid-template-columns:300px minmax(0,1fr);height:calc(100dvh - 118px);min-height:480px}
+.copilot-page-list{border:0;border-radius:0;background:transparent;padding-left:max(12px,calc((100vw - 1560px)/2))}
+.copilot-page-list h2{padding:18px 14px 8px;font-size:13px;color:var(--product-muted)}
+.copilot-page-item[aria-current=page]{background:var(--product-tint)}
+.copilot-panel.copilot-page-chat{border:0;border-radius:0;background:transparent;font-size:15px;line-height:24px}
+.copilot-page-chat .copilot-header{border-bottom:0;padding:14px 28px 6px;min-height:0}
+.copilot-page-chat .copilot-header h2{font-size:15px;font-weight:700;color:var(--product-body)}
+.copilot-page-chat .copilot-content{padding:8px 28px 20px;gap:22px}
+.copilot-page-chat .copilot-turn{gap:18px;margin-top:0}
+.copilot-page-chat .copilot-answer{background:transparent;padding:0;border-radius:0}
+.copilot-page-chat .copilot-question{max-width:80%;padding:10px 16px;background:var(--product-tint)}
+.copilot-page-chat .copilot-input{border-top:0;background:transparent;padding:0 28px 18px}
+.copilot-page-chat .copilot-input-row{border:1px solid var(--product-line);border-radius:26px;background:var(--product-surface);padding:6px 8px 6px 16px;box-shadow:0 6px 24px rgba(31,42,82,.08)}
+.copilot-page-chat .copilot-input-row:focus-within{border-color:var(--product-accent)}
+.copilot-page-chat .copilot-input textarea{background:transparent;border:0;font-size:15px;line-height:22px;padding:8px 0;outline:none}
+.copilot-page-chat .copilot-input small{text-align:center}
+@media(max-width:1023px){.copilot-page{grid-template-columns:1fr;height:auto}.copilot-page-list{max-height:200px;padding-left:12px;border-bottom:1px solid var(--product-line-2)}.copilot-panel.copilot-page-chat{height:calc(100dvh - 330px);min-height:420px;border-radius:0}}
