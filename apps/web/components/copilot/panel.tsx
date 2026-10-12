@@ -210,6 +210,9 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
     setJobsOpen({ page, open: false });
     void store.ask(caseId, text.trim(), intent, page, semanticProcessing, documentProcessing, guided, free);
   };
+  // 추천 질문도 입력창 질문과 같은 길(자유 대화)로 답한다. 예전 안내형 경로는 공고문을 읽으면 입력 한도를 넘겨
+  // "공고문 근거가 너무 많아 답변을 생성하지 못했습니다" 로 끝났고, 로그인도 요구했다(2026-10-12).
+  const askRecommended = (group: string, label: string) => ask(`${group}: ${label}`, undefined, undefined, true);
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>
@@ -241,9 +244,9 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
             <h4>{job.label}</h4>
             <ol>{job.questions.map(item => <li key={item.question_id}>
               <Button type="button" variant="ghost" className="copilot-quiet"
-                disabled={state.busy || item.availability === 'BLOCKED'}
+                disabled={state.busy || item.availability === 'BLOCKED' || !semanticProcessing}
                 title={item.unavailable_reason ?? item.answer_scope}
-                onClick={() => { store.focus(caseId, null); ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id }); }}>
+                onClick={() => { store.focus(caseId, null); askRecommended(job.label, item.label); }}>
                 {item.order}. {item.label}
               </Button>
               {item.unavailable_reason && !sharedReason && <small>{item.unavailable_reason}</small>}
@@ -270,7 +273,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
             {followUps.length > 0 && <div className="copilot-followups" aria-label="관련 후속 질문">
               <strong>이어서 확인하기</strong>
               {followUps.map(item => <Button type="button" variant="outline" className="copilot-quiet" key={item.question_id}
-                disabled={state.busy} onClick={() => ask(item.label, undefined, { jobId: job!.job_id, questionId: item.question_id })}>
+                disabled={state.busy} onClick={() => askRecommended(job!.label, item.label)}>
                 {item.label}
               </Button>)}
             </div>}
