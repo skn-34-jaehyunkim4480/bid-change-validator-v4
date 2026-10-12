@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/v1", tags=["qualification matching"])
 def list_notice_matches(
     company_id: UUID,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
     reference_date: date | None = None,
     db: Session = Depends(get_db),
     user: AppUser | None = Depends(get_optional_current_user),
@@ -35,6 +36,7 @@ def list_notice_matches(
             company_id=company_id,
             reference_date=reference_date,
             limit=limit,
+            offset=offset,
         )
     except QualificationJudgmentError as error:
         raise ApiError(error.status_code, error.code, error.message) from error

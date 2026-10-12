@@ -7,10 +7,12 @@ from pydantic import BaseModel, Field
 
 class NoticeMatchRead(BaseModel):
     notice_id: UUID
+    case_id: UUID
     bid_notice_no: str
     title: str
     institution_name: str | None
     version_number: int
+    is_current_version: bool
     analysis_run_id: UUID
     analysis_status: str
     overall_status: Literal["core_met", "core_unmet", "needs_review"]
@@ -20,11 +22,13 @@ class NoticeMatchRead(BaseModel):
     requirement_count: int
     evidence_count: int
     analyzed_at: datetime
+    judged_at: datetime
 
 
 class NoticeMatchSearchResponse(BaseModel):
     company_id: UUID
     analyzed_notice_count: int
     returned_count: int
+    offset: int = 0
     items: list[NoticeMatchRead] = Field(default_factory=list)
-    note: str = "이미 자격요건 분석 결과가 있는 현재 공고만 비교합니다. 분석되지 않은 공고를 자동 매칭된 것으로 간주하지 않습니다."
+    note: str = "해당 회사가 실제 판정한 공고 이력입니다. 이전 차수의 결과도 보존하며, 현재 자격 충족을 의미하지 않습니다."

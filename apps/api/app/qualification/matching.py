@@ -1,8 +1,7 @@
-"""Profile → notice matching over cached qualification analyses.
+"""Company-scoped persisted qualification judgment history.
 
-This is intentionally staged. It never labels an unanalyzed notice as matched.
-The service reuses the same deterministic qualification rules used by a
-PreflightCase, but does not persist a JudgmentRun until the user starts a review.
+Historical judgments are read as saved, even if the notice has a newer version
+or its AI analysis cache has expired. Shared companies share their history.
 """
 
 from __future__ import annotations
@@ -10,20 +9,15 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import exists, func, select, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from bidengine.judgment.rules import judge_requirements
-from .analysis import no_restriction_stated
 from ..analysis_models import QualificationAnalysisRun
-from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRun
+from ..judgment_models import QualificationJudgmentRun
 from ..matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse
 from ..models import BidNotice, BidNoticeVersion, PreflightCase
-from .analysis import analysis_run_response, qualification_analysis_version_fingerprint
-from .judgment import _load_company, _record_to_completeness, build_company_profile_snapshot, grounded_keys_for_analysis
+from .judgment import _load_company
 
-
-_STATUS_ORDER = {"core_met": 0, "needs_review": 1, "core_unmet": 2}
 
 
 def _load_latest_valid_analysis_runs(
@@ -79,98 +73,104 @@ def match_cached_notices(
     company_id: UUID,
     reference_date: date | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> NoticeMatchSearchResponse:
-    company = _load_company(db, company_id)
-    completeness = _record_to_completeness(db.get(CompanyQualificationProfileCompleteness, company_id))
-    profile = build_company_profile_snapshot(company, completeness)
-    ref_date = reference_date or date.today()
+    """Company-wide *stored judgment history*, never a global AI-cache search.
 
-    current_versions = db.execute(
-        select(BidNotice, BidNoticeVersion)
-        .join(BidNoticeVersion, BidNoticeVersion.notice_id == BidNotice.id)
+    Multiple accounts of the same company share this history. Historical notice
+    versions and stale analysis fingerprints stay visible as historical results.
+    Only the latest judgment for each (notice, analyzed version) is shown.
+    """
+    _load_company(db, company_id)
+    # Kept in the HTTP contract for compatibility; historical verdicts must not
+    # be silently recomputed with a different reference date or live profile.
+    _ = reference_date
+
+    ranked = (
+        select(
+            QualificationJudgmentRun.id.label("run_id"),
+            QualificationJudgmentRun.created_at.label("judged_at"),
+            func.row_number().over(
+                partition_by=(PreflightCase.notice_id, QualificationJudgmentRun.notice_version_id),
+                order_by=(QualificationJudgmentRun.created_at.desc(), QualificationJudgmentRun.id.desc()),
+            ).label("rank"),
+        )
+        .join(PreflightCase, QualificationJudgmentRun.preflight_case_id == PreflightCase.id)
+        .join(BidNoticeVersion, QualificationJudgmentRun.notice_version_id == BidNoticeVersion.id)
         .where(
-            BidNoticeVersion.is_current.is_(True),
-            # Restrict to this company's completed judgments for current version.
-            # Shared AI analyses are not an account's review history.
-            exists(
-                select(QualificationJudgmentRun.id)
-                .join(PreflightCase, QualificationJudgmentRun.preflight_case_id == PreflightCase.id)
-                .where(
-                    QualificationJudgmentRun.company_id == company_id,
-                    QualificationJudgmentRun.notice_version_id == BidNoticeVersion.id,
-                    PreflightCase.company_id == company_id,
-                    PreflightCase.notice_id == BidNotice.id,
-                    PreflightCase.current_version_id == BidNoticeVersion.id,
-                )
-            ),
-            exists(
-                select(QualificationAnalysisRun.id).where(
-                    QualificationAnalysisRun.notice_version_id == BidNoticeVersion.id,
-                    QualificationAnalysisRun.input_fingerprint.is_not(None),
-                )
-            ),
+            QualificationJudgmentRun.company_id == company_id,
+            PreflightCase.company_id == company_id,
+            PreflightCase.notice_id == BidNoticeVersion.notice_id,
         )
-        .options(selectinload(BidNoticeVersion.documents))
-        .order_by(BidNotice.last_seen_at.desc())
-    ).all()
-    versions = {version.id: version for _, version in current_versions}
-    fingerprints = {
-        version_id: qualification_analysis_version_fingerprint(version)
-        for version_id, version in versions.items()
-    }
-    runs = _load_latest_valid_analysis_runs(db, fingerprints)
-
-    items: list[NoticeMatchRead] = []
-    for notice, version in current_versions:
-        run = runs.get(version.id)
-        if run is None or run.status == "FAILED":
-            continue
-        analysis = analysis_run_response(run)
-        evaluation = judge_requirements(
-            analysis.requirements,
-            profile,
-            preflight_case_id=f"MATCH:{company_id}:{notice.id}",
-            reference_date=ref_date,
-            analysis_status=run.status,
-            coverage_complete=analysis.verdict_complete, no_restriction_stated=no_restriction_stated(analysis),
-            grounded_requirement_keys=grounded_keys_for_analysis(run, analysis),
-        )
-        overall = evaluation.overall_status
-
-        satisfied = sum(item.status == "SATISFIED" for item in evaluation.judgments)
-        unknown = sum(item.status == "UNKNOWN" for item in evaluation.judgments)
-        unsatisfied = sum(item.status == "UNSATISFIED" for item in evaluation.judgments)
-        items.append(
-            NoticeMatchRead(
-                notice_id=notice.id,
-                bid_notice_no=notice.bid_notice_no,
-                title=notice.title,
-                institution_name=notice.announcing_institution_name,
-                version_number=version.version_number,
-                analysis_run_id=run.id,
-                analysis_status=run.status,
-                overall_status=overall,
-                satisfied_count=satisfied,
-                unknown_count=unknown,
-                unsatisfied_count=unsatisfied,
-                requirement_count=len(analysis.requirements),
-                evidence_count=len(analysis.evidence),
-                analyzed_at=run.created_at,
-            )
-        )
-
-    items.sort(
-        key=lambda item: (
-            _STATUS_ORDER[item.overall_status],
-            item.unsatisfied_count,
-            item.unknown_count,
-            -item.satisfied_count,
-            item.bid_notice_no,
-        )
+        .subquery()
     )
+    total = db.scalar(select(func.count()).select_from(ranked).where(ranked.c.rank == 1)) or 0
+    if total == 0:
+        return NoticeMatchSearchResponse(
+            company_id=company_id, analyzed_notice_count=0,
+            returned_count=0, offset=offset, items=[],
+        )
+
+    run_ids = db.scalars(
+        select(ranked.c.run_id)
+        .where(ranked.c.rank == 1)
+        .order_by(ranked.c.judged_at.desc(), ranked.c.run_id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    if not run_ids:
+        return NoticeMatchSearchResponse(
+            company_id=company_id, analyzed_notice_count=total,
+            returned_count=0, offset=offset, items=[],
+        )
+
+    records = db.execute(
+        select(QualificationJudgmentRun, BidNotice, BidNoticeVersion)
+        .join(PreflightCase, QualificationJudgmentRun.preflight_case_id == PreflightCase.id)
+        .join(BidNoticeVersion, QualificationJudgmentRun.notice_version_id == BidNoticeVersion.id)
+        .join(BidNotice, PreflightCase.notice_id == BidNotice.id)
+        .where(
+            QualificationJudgmentRun.id.in_(run_ids),
+            QualificationJudgmentRun.company_id == company_id,
+            PreflightCase.company_id == company_id,
+            BidNoticeVersion.notice_id == BidNotice.id,
+        )
+        .options(
+            joinedload(QualificationJudgmentRun.analysis_run).selectinload(QualificationAnalysisRun.requirements),
+            joinedload(QualificationJudgmentRun.analysis_run).selectinload(QualificationAnalysisRun.evidence),
+            selectinload(QualificationJudgmentRun.judgments),
+        )
+    ).all()
+
+    stored_status_to_display = {"eligible": "core_met", "ineligible": "core_unmet", "insufficient_data": "needs_review", "needs_review": "needs_review", "core_met": "core_met", "core_unmet": "core_unmet"}
+    items = []
+    for judgment, notice, version in records:
+        analysis = judgment.analysis_run
+        statuses = [row.status for row in judgment.judgments]
+        items.append(NoticeMatchRead(
+            notice_id=notice.id,
+            case_id=judgment.preflight_case_id,
+            bid_notice_no=notice.bid_notice_no,
+            title=notice.title,
+            institution_name=notice.announcing_institution_name,
+            version_number=version.version_number,
+            is_current_version=version.is_current,
+            analysis_run_id=judgment.analysis_run_id,
+            analysis_status=analysis.status,
+            overall_status=stored_status_to_display[judgment.overall_status],
+            satisfied_count=statuses.count("SATISFIED"),
+            unknown_count=statuses.count("UNKNOWN"),
+            unsatisfied_count=statuses.count("UNSATISFIED"),
+            requirement_count=len(analysis.requirements),
+            evidence_count=len(analysis.evidence),
+            analyzed_at=analysis.created_at,
+            judged_at=judgment.created_at,
+        ))
+    items.sort(key=lambda item: (item.judged_at, str(item.analysis_run_id)), reverse=True)
     return NoticeMatchSearchResponse(
         company_id=company_id,
-        analyzed_notice_count=len(items),
-        returned_count=min(len(items), limit),
-        items=items[:limit],
+        analyzed_notice_count=total,
+        returned_count=len(items),
+        offset=offset,
+        items=items,
     )
