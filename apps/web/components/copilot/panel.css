@@ -109,3 +109,16 @@
 .copilot-list-toggle{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:10px;color:var(--product-muted)}
 .copilot-list-toggle:hover{background:var(--product-tint);color:var(--product-ink)}
 .copilot-page-general{margin:0 8px 4px}
+
+/*
+  패널이 열려 있는 동안 띄움 단추는 감춘다(2026-10-12). 단추가 남아 있으면 패널이 그 위로 밀려 대화창이 작아졌다.
+  패널은 화면 오른쪽 아래 끝까지 쓰고, 기본 크기도 키워 긴 답이 덜 접히게 한다.
+*/
+.copilot-launch[aria-expanded=true]{display:none}
+@media(min-width:1024px){
+.copilot-panel{inset:auto 24px 24px auto;width:var(--copilot-w,480px);height:min(var(--copilot-h,820px),calc(100dvh - 48px))}
+}
+
+/* 전용 화면의 스크롤 막대는 스크롤하는 동안에만 잠깐 보인다(app/copilot/page.tsx 가 data-scrolling 을 붙인다). */
+.copilot-page-list ul,.copilot-page-chat .copilot-content{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color .3s}
+.copilot-page-list ul[data-scrolling],.copilot-page-chat .copilot-content[data-scrolling]{scrollbar-color:color-mix(in srgb,var(--product-muted) 55%,transparent) transparent}

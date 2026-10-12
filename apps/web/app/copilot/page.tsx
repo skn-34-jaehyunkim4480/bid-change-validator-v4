@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { CopilotMascot } from '@/components/copilot/mascot';
 import { PanelBody } from '@/components/copilot/panel';
@@ -21,6 +21,22 @@ export default function CopilotPage() {
   const [cases, setCases] = useState<PreflightCase[] | null>(null);
   const [error, setError] = useState('');
   const [listOpen, setListOpen] = useState(true);
+  const frame = useRef<HTMLDivElement>(null);
+  // 스크롤 막대는 스크롤하는 동안에만 보인다: 스크롤이 일어난 요소에 표시를 달고 잠시 뒤에 뗀다.
+  useEffect(() => {
+    const root = frame.current;
+    if (!root) return;
+    const timers = new Map<Element, number>();
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      target.dataset.scrolling = '';
+      window.clearTimeout(timers.get(target));
+      timers.set(target, window.setTimeout(() => { delete target.dataset.scrolling; timers.delete(target); }, 900));
+    };
+    root.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => { root.removeEventListener('scroll', onScroll, { capture: true }); timers.forEach(timer => window.clearTimeout(timer)); };
+  }, []);
   const { store } = useCopilot(requested);
   // 어느 검토 건에 대화가 있는지. 저장소가 바뀔 때마다 다시 읽는다.
   const talkedKey = useSyncExternalStore(store.subscribe, () => store.caseIds().join(','), () => '');
@@ -64,7 +80,7 @@ export default function CopilotPage() {
     <main className="bg-white text-[var(--product-body)]">
       <div className="copilot-page-shell">
         {error && <p role="alert" className="mb-4 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-[15px] text-rose-700">{error}</p>}
-        <div className="copilot-page" data-list={listOpen ? 'open' : 'closed'}>
+        <div className="copilot-page" ref={frame} data-list={listOpen ? 'open' : 'closed'}>
           <aside className="copilot-page-list" aria-label="대화 목록">
             <h2>일반 도우미</h2>
             <div className="copilot-page-general">

@@ -93,7 +93,8 @@ export function CopilotPanel() {
     if (dialog.current) applyPanelSize(dialog.current, null);
     savePanelSize(null);
   };
-  const close = () => { setOpen(false); toggle.current?.focus(); };
+  // 열려 있는 동안 띄움 단추는 감춘다(panel.css). 닫은 뒤 다시 보이면 초점을 돌려준다.
+  const close = () => { setOpen(false); window.requestAnimationFrame(() => toggle.current?.focus()); };
   if (!page) return null;
   return <>
     <button type="button" ref={toggle} className="copilot-launch" aria-expanded={open} aria-controls="copilot-panel" onClick={() => setOpen(value => !value)}>
@@ -112,11 +113,11 @@ type PanelSize = { w: number; h: number };
 const PANEL_SIZE_KEY = 'bidcheck.copilot.panel-size';
 const PANEL_MIN: PanelSize = { w: 340, h: 420 };
 
-/** 화면 밖으로 나가지 않게 한다. 오른쪽 24px·아래 76px 에 붙어 있으므로 그만큼의 여백을 남긴다. */
+/** 화면 밖으로 나가지 않게 한다. 오른쪽·아래 24px 에 붙어 있으므로 그만큼의 여백을 남긴다. */
 function clampPanelSize(w: number, h: number): PanelSize {
   return {
     w: Math.round(Math.max(PANEL_MIN.w, Math.min(w, window.innerWidth - 48))),
-    h: Math.round(Math.max(PANEL_MIN.h, Math.min(h, window.innerHeight - 100))),
+    h: Math.round(Math.max(PANEL_MIN.h, Math.min(h, window.innerHeight - 48))),
   };
 }
 
@@ -307,7 +308,8 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
         })}
       </div>
       {state.busy && <div className="copilot-answer copilot-loading" data-state="LOADING">
-        <output>{documentProcessing ? '공고문 근거를 확인하고 있어요…' : semanticProcessing ? '판정 결과를 이해하기 쉽게 정리하고 있어요…' : '현재 검토 결과를 확인하고 있어요…'}</output>
+        {/* 무엇을 하고 있는지는 방금 보낸 질문의 종류로 정한다. 일반 도우미와 안내형 질문은 공고문을 읽지 않는다. */}
+        <output>{general ? '답변을 준비하고 있어요…' : state.turns.at(-1)?.free && documentProcessing ? '공고문 근거를 확인하고 있어요…' : semanticProcessing ? '판정 결과를 이해하기 쉽게 정리하고 있어요…' : '현재 검토 결과를 확인하고 있어요…'}</output>
         <div className="copilot-skeleton" aria-hidden="true"><span /><span /><span /></div>
       </div>}
       {state.error && <div role="alert" className={noJudgment ? 'copilot-notice' : 'copilot-error'} data-state={noJudgment ? 'NO_JUDGMENT' : 'ERROR'}>
