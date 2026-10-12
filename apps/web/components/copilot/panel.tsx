@@ -2,6 +2,7 @@
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopilotNavigationLink } from './navigation-link';
@@ -37,6 +38,49 @@ export function CopilotPanel() {
     media.addEventListener('change', display);
     return () => { media.removeEventListener('change', display); element.close(); };
   }, [open, page]);
+  // 창 크기는 React 상태가 아니라 dialog 의 CSS 변수로 둔다 — 끄는 동안 다시 그리지 않고, 저장된 크기는 이 브라우저에 남는다.
+  useEffect(() => {
+    const element = dialog.current;
+    if (element) applyPanelSize(element, readPanelSize());
+  }, [page]);
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const element = dialog.current;
+    if (!element) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    const rect = element.getBoundingClientRect();
+    const origin = { x: event.clientX, y: event.clientY, w: rect.width, h: rect.height };
+    let size = clampPanelSize(origin.w, origin.h);
+    // 창이 오른쪽 아래에 붙어 있으므로 왼쪽 위 모서리를 끌면 왼쪽·위로 커진다.
+    const move = (pointer: PointerEvent) => {
+      size = clampPanelSize(origin.w + origin.x - pointer.clientX, origin.h + origin.y - pointer.clientY);
+      applyPanelSize(element, size);
+    };
+    const stop = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      savePanelSize(size);
+    };
+    handle.setPointerCapture(event.pointerId);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  };
+  const resizeByKey = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const element = dialog.current;
+    const step = { ArrowLeft: [24, 0], ArrowRight: [-24, 0], ArrowUp: [0, 24], ArrowDown: [0, -24] }[event.key];
+    if (!element || !step) return;
+    event.preventDefault();
+    const rect = element.getBoundingClientRect();
+    const size = clampPanelSize(rect.width + step[0], rect.height + step[1]);
+    applyPanelSize(element, size);
+    savePanelSize(size);
+  };
+  const resetSize = () => {
+    if (dialog.current) applyPanelSize(dialog.current, null);
+    savePanelSize(null);
+  };
   const close = () => { setOpen(false); toggle.current?.focus(); };
   if (!page) return null;
   return <>
@@ -44,10 +88,51 @@ export function CopilotPanel() {
       <CopilotMascot /> AI Copilot
     </button>
     <dialog ref={dialog} id="copilot-panel" className="copilot-panel" aria-labelledby="copilot-title" onCancel={close}>
+      <button type="button" className="copilot-resize" aria-label="도우미 창 크기 조절" title="끌어서 크기 조절 · 두 번 누르면 원래 크기"
+        onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={resetSize} />
       <PanelHeader caseId={caseId} close={close} />
       <PanelBody key={caseId} caseId={caseId} page={page} />
     </dialog>
   </>;
+}
+
+type PanelSize = { w: number; h: number };
+const PANEL_SIZE_KEY = 'bidcheck.copilot.panel-size';
+const PANEL_MIN: PanelSize = { w: 340, h: 420 };
+
+/** 화면 밖으로 나가지 않게 한다. 오른쪽 24px·아래 76px 에 붙어 있으므로 그만큼의 여백을 남긴다. */
+function clampPanelSize(w: number, h: number): PanelSize {
+  return {
+    w: Math.round(Math.max(PANEL_MIN.w, Math.min(w, window.innerWidth - 48))),
+    h: Math.round(Math.max(PANEL_MIN.h, Math.min(h, window.innerHeight - 100))),
+  };
+}
+
+function applyPanelSize(element: HTMLElement, size: PanelSize | null) {
+  if (size) {
+    element.style.setProperty('--copilot-w', `${size.w}px`);
+    element.style.setProperty('--copilot-h', `${size.h}px`);
+  } else {
+    element.style.removeProperty('--copilot-w');
+    element.style.removeProperty('--copilot-h');
+  }
+}
+
+function readPanelSize(): PanelSize | null {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(PANEL_SIZE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object' && 'w' in saved && 'h' in saved && typeof saved.w === 'number' && typeof saved.h === 'number') {
+      return clampPanelSize(saved.w, saved.h);
+    }
+  } catch { /* 저장소 차단·깨진 값 — 기본 크기 */ }
+  return null;
+}
+
+function savePanelSize(size: PanelSize | null) {
+  try {
+    if (size) window.localStorage.setItem(PANEL_SIZE_KEY, JSON.stringify(size));
+    else window.localStorage.removeItem(PANEL_SIZE_KEY);
+  } catch { /* 저장소 차단 — 이번 방문에만 유지 */ }
 }
 
 function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
@@ -67,7 +152,8 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
   </header>;
 }
 
-const consentKey = (kind: 'semantic' | 'document') => `bidcheck.copilot.consent.${kind}`;
+// v2: 안내 문구를 바꾸면서 열쇠를 새로 했다. 예전 체크를 이어받으면 새 안내를 한 번도 보지 못한다.
+const consentKey = (kind: 'semantic' | 'document') => `bidcheck.copilot.notice.v2.${kind}`;
 const consentListeners = new Set<() => void>();
 // 저장소를 못 쓰는 브라우저에서도 이번 방문 동안은 고른 값이 유지되게 한다.
 const consentMemory = new Map<string, boolean>();
@@ -147,18 +233,24 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
           <span><ChevronDown size={16} aria-hidden="true" />추천 질문 6개</span>
           <span>{jobsExpanded ? '접기' : '보기'}</span>
         </button>
-        {jobsExpanded && <div className="copilot-jobs-list">{catalog.jobs.map(job => <section className="copilot-job" key={job.job_id}>
-          <h4>{job.label}</h4>
-          <ol>{job.questions.map(item => <li key={item.question_id}>
-            <Button type="button" variant="ghost" className="copilot-quiet"
-              disabled={state.busy || item.availability === 'BLOCKED'}
-              title={item.unavailable_reason ?? item.answer_scope}
-              onClick={() => { store.focus(caseId, null); ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id }); }}>
-              {item.order}. {item.label}
-            </Button>
-            {item.unavailable_reason && <small>{item.unavailable_reason}</small>}
-          </li>)}</ol>
-        </section>)}</div>}
+        {jobsExpanded && <div className="copilot-jobs-list">{catalog.jobs.map(job => {
+          // 묶음 안의 질문이 모두 같은 이유로 막혀 있으면 이유를 질문마다 되풀이하지 않고 묶음 아래에 한 번만 적는다.
+          const reasons = job.questions.map(item => item.unavailable_reason ?? '');
+          const sharedReason = reasons.length > 1 && reasons[0] && reasons.every(reason => reason === reasons[0]) ? reasons[0] : null;
+          return <section className={job.job_id === 'changed_notice' ? 'copilot-job copilot-job-change' : 'copilot-job'} key={job.job_id}>
+            <h4>{job.label}</h4>
+            <ol>{job.questions.map(item => <li key={item.question_id}>
+              <Button type="button" variant="ghost" className="copilot-quiet"
+                disabled={state.busy || item.availability === 'BLOCKED'}
+                title={item.unavailable_reason ?? item.answer_scope}
+                onClick={() => { store.focus(caseId, null); ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id }); }}>
+                {item.order}. {item.label}
+              </Button>
+              {item.unavailable_reason && !sharedReason && <small>{item.unavailable_reason}</small>}
+            </li>)}</ol>
+            {sharedReason && <small>{sharedReason}</small>}
+          </section>;
+        })}</div>}
       </section>}
       {caseId && !catalog && !catalogError && <p className="copilot-limitation">검증된 질문을 확인하고 있어요…</p>}
       {catalogError && <p role="alert" className="copilot-error">{catalogError}</p>}
