@@ -26,3 +26,12 @@ void test('free chat answers are split into paragraphs and bullet lists', () => 
   // 날짜 범위나 음수처럼 줄 앞이 아닌 곳의 '-' 는 목록이 아니다.
   assert.deepEqual(splitAnswerBlocks('기간은 10-12월입니다.'), [{ kind: 'text', text: '기간은 10-12월입니다.' }]);
 });
+
+void test('a blank line separates paragraphs so the summary heading stands alone', () => {
+  const answer = ['서류는 열네 가지입니다.', '마감은 14:00입니다.', '', '요약', '- 서류: 구비서류 준비', '- 기한: 10월 6일 14:00'].join('\n');
+  assert.deepEqual(splitAnswerBlocks(answer), [
+    { kind: 'text', text: '서류는 열네 가지입니다.\n마감은 14:00입니다.' },
+    { kind: 'text', text: '요약' },
+    { kind: 'list', items: ['서류: 구비서류 준비', '기한: 10월 6일 14:00'] },
+  ]);
+});

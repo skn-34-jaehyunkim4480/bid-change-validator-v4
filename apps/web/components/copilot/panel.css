@@ -50,3 +50,7 @@
 @media(max-width:1023px){.copilot-resize{display:none}}
 
 .copilot-free-answer li strong{display:block;font-weight:700;color:var(--product-ink)}
+
+/* 답변 아래의 요약: 본문과 구분선으로 나누고 옅은 바탕을 깐다. */
+.copilot-answer-summary{display:grid;gap:8px;margin-top:4px;padding:12px;border-radius:12px;background:var(--product-surface);border:1px solid var(--product-line)}
+.copilot-answer-summary h5{margin:0;font-size:12px;font-weight:800;color:var(--product-accent-deep)}

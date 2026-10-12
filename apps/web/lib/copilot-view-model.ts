@@ -64,7 +64,7 @@ export function getCopilotWarningItems(response: CopilotChatResponse): string[] 
 export type AnswerBlock = { kind: 'text'; text: string } | { kind: 'list'; items: string[] };
 
 /**
- * 자유 대화 답변을 문단과 목록으로 나눈다. 모델은 일반 텍스트로 쓰고 목록의 각 줄을 '- ' 로 시작한다
+ * 자유 대화 답변을 문단과 목록으로 나눈다(빈 줄이 문단을 가른다). 모델은 일반 텍스트로 쓰고 목록의 각 줄을 '- ' 로 시작한다
  * ('* ', '• ', '· ' 도 같은 것으로 본다). 화면은 이것을 글머리 목록으로 그린다.
  */
 export function splitAnswerBlocks(answer: string): AnswerBlock[] {
@@ -77,6 +77,7 @@ export function splitAnswerBlocks(answer: string): AnswerBlock[] {
   };
   for (const line of answer.split(/\r?\n/)) {
     const item = /^\s*[-*•·]\s+(.*\S)\s*$/.exec(line);
+    if (!line.trim()) { flush(); continue; }   // 빈 줄은 문단을 나눈다 — '요약' 줄이 본문 문단에 붙지 않게 한다
     if (!item) { text.push(line); continue; }
     flush();
     const last = blocks.at(-1);
