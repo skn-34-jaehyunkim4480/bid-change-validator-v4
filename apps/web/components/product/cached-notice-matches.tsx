@@ -5,12 +5,13 @@ import { LoaderCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { listCompanies } from '@/lib/qualification-api';
 import { listNoticeMatches, type NoticeMatch } from '@/lib/notice-matching-api';
-import { navigateTo } from '@/lib/navigation';
+import { useRouter } from 'next/navigation';
 import { analysisBadgeLabel, OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 
 const PAGE_SIZE = 12;
 
 export function CachedNoticeMatches() {
+  const router = useRouter();
   const [matches, setMatches] = useState<NoticeMatch[]>([]);
   const [companyId, setCompanyId] = useState('');
   const [total, setTotal] = useState(0);
@@ -74,7 +75,7 @@ export function CachedNoticeMatches() {
                     {item.satisfied_count + item.unknown_count + item.unsatisfied_count > 0 ? (
                       <div className="mt-4 flex gap-3 text-[13px]"><span className="text-emerald-700">충족 {item.satisfied_count}</span><span className="text-amber-700">확인 {item.unknown_count}</span><span className="text-rose-700">미달 {item.unsatisfied_count}</span></div>
                     ) : <p className="mt-4 text-[13px] text-[var(--product-muted)]">{item.requirement_count === 0 ? '자격요건 미확보' : '판정된 항목 없음'}</p>}
-                    <Button size="sm" className="mt-5 rounded-full" onClick={() => navigateTo(`/qualification?caseId=${item.case_id}`)}>검토 열기 <ArrowRight /></Button>
+                    <Button size="sm" className="mt-5 rounded-full" onClick={() => router.push(`/qualification?caseId=${item.case_id}`)}>검토 열기 <ArrowRight /></Button>
                   </article>
                 );
               })}
