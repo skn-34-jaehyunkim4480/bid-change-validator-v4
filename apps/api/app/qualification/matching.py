@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from bidengine.judgment.rules import judge_requirements
 from .analysis import no_restriction_stated
 from ..analysis_models import QualificationAnalysisRun
-from ..judgment_models import CompanyQualificationProfileCompleteness
+from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRun
 from ..matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse
-from ..models import BidNotice, BidNoticeVersion
+from ..models import BidNotice, BidNoticeVersion, PreflightCase
 from .analysis import analysis_run_response, qualification_analysis_version_fingerprint
 from .judgment import _load_company, _record_to_completeness, build_company_profile_snapshot, grounded_keys_for_analysis
 
@@ -90,6 +90,19 @@ def match_cached_notices(
         .join(BidNoticeVersion, BidNoticeVersion.notice_id == BidNotice.id)
         .where(
             BidNoticeVersion.is_current.is_(True),
+            # Restrict to this company's completed judgments for current version.
+            # Shared AI analyses are not an account's review history.
+            exists(
+                select(QualificationJudgmentRun.id)
+                .join(PreflightCase, QualificationJudgmentRun.preflight_case_id == PreflightCase.id)
+                .where(
+                    QualificationJudgmentRun.company_id == company_id,
+                    QualificationJudgmentRun.notice_version_id == BidNoticeVersion.id,
+                    PreflightCase.company_id == company_id,
+                    PreflightCase.notice_id == BidNotice.id,
+                    PreflightCase.current_version_id == BidNoticeVersion.id,
+                )
+            ),
             exists(
                 select(QualificationAnalysisRun.id).where(
                     QualificationAnalysisRun.notice_version_id == BidNoticeVersion.id,
