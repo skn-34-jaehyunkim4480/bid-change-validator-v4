@@ -43,3 +43,23 @@ py -m pytest apps/api/tests/test_ml_task_review_queue.py -q
 **Private extracted notice content and synthetic profiles are outside Git.** This PR only contains the exporters, audit/validation logic, reproducible test fixtures and this report.
 
 PR dependency order: **#75 -> #77 -> PR C** (C targets #77's head branch). Each remains Draft/unmerged pending approval.
+## 2026-10-13 GPT-6 pilot: independently authored excerpt labels (NOT GOLDEN)
+
+The GPT-6 assistant inspected selected AWS-extracted source blocks without seeing model rankings. Local frozen data (outside Git) contains **15 reviewed task excerpts** (13 direct, 2 scope inferred from proposal/rubric requirements), **6 synthetic company profiles** and **90 model-authored relevance judgments**: grade 0:79, grade 1:6, grade 2:5, grade 3:0. The remaining 34 excerpt candidates are not reviewed, and no score means legal eligibility. The labels are explicitly identified as gpt_teacher / REVIEWED_SOURCE_EXCERPT / human_approved=false. Rationale strings were assembled from a manually model-authored score matrix and source/profile fields; they are NOT 90 separate human-reviewed decisions.
+
+Private files: local directory ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1 containing task_review.jsonl, teacher_judgments.jsonl, manifest.json and bm25_e5_pilot.json. Original protected notice texts and labels NOT committed.
+
+### Small CPU retrieval pilot (15 reviewed excerpts only, 6 companies; 4 with relevant grade >= 2)
+
+BM25 nDCG@10 0.81013; pretrained E5-small 0.81517; BM25+E5 RRF 0.84671. E5 improves by only +0.00504 against BM25. E5 warmed corpus+query embedding 0.501s; excludes model load. This is an exploratory *small judged-candidate ranking*, not full 383-notice independent retrieval, not a time/family holdout, not a full-task independent benchmark and not full-corpus recall. Label distribution is heavily imbalanced, and models rank different candidate subsets. Do not equate any of these metrics to operational accuracy or compare directly with the prior title-only 0.9300 pilot.
+
+Local excerpt SHA/selected block refs are independently checked by the offline tool, but original AWS S3 bytes were not all rehashed. External API cost: $0; only locally cached E5-small and offline BM25 used. No model deployment, PR merge or API expenditure.
+
+### Offline replay
+
+Set PYTHONPATH to the engine and apps/api source roots and HF_HOME to existing local private HF cache, then run:
+python -m app.ml_recommendations.excerpt_teacher_pilot --annotations ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1 --source-root ..\ml-relevance-audit-private-20261013\prc_corpus_v1 --profiles ..\ml-synthetic-20261013\snapshot.json --output ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1\bm25_e5_recheck.json
+
+### Remaining blockers
+
+Review 34 more excerpts, inspect alternate attachments, close external notice relation edges, verify full task scope including original-source integrity, and build independently judged positive/hard-negative company pairs with a real temporal/company holdout (at least 10 test firms x 30 independently reviewed pairs). Only then perform independent full valid-universe BM25 Top100/E5 Top100 retrieval and judge reranking. Do not promote this pilot to PR A full-task accuracy.
