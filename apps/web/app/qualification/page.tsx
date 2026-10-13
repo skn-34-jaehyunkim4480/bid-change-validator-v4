@@ -298,7 +298,7 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
                   </span>
                 </NavigationLink>
                 {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
-                {expired && <DeleteExpiredCase caseId={item.id} onDeleted={onChanged} className="absolute bottom-4 left-5 right-5" />}
+                {expired && <div className="absolute bottom-4 left-5 right-5 flex"><DeleteExpiredCase caseId={item.id} onDeleted={onChanged} /></div>}
               </li>
             );
           })}

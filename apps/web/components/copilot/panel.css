@@ -141,4 +141,4 @@
 .copilot-header-badges .copilot-badge:first-child:not(:only-child){flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .copilot-new-conversation{white-space:nowrap}
 /* 남은 질문 수(요금제 한도). 입력창 아래 안내 줄에 작은 글씨로 붙는다. */
-.copilot-quota{font-variant-numeric:tabular-nums;white-space:nowrap}
+.copilot-quota{color:var(--product-muted);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
