@@ -18,6 +18,7 @@ const REASON: Record<MembershipKind, { title: string; unit: string; key: 'notice
 };
 
 const limitText = (value: number | null, unit: string) => (value == null ? '제한 없음' : `월 ${value}${unit}`);
+const amountText = (value: number | null, unit: string) => (value == null ? '제한 없이' : `${value}${unit}`);
 
 export function MembershipModal() {
   const kind = useSyncExternalStore(membershipModal.subscribe, membershipModal.get, () => null);
@@ -56,7 +57,7 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
         <span className="membership-done-mark" aria-hidden><Check size={22} /></span>
         <h2 id="membership-title">{done.plan_name} 요금제가 적용되었습니다</h2>
         <p className="membership-lead">
-          이번 달 참가자격 확인 {limitText(plan?.notice_checks ?? null, '건')}, 공고 안 AI Copilot 질문 {limitText(plan?.copilot_questions ?? null, '회')}까지 쓸 수 있습니다.
+          한 달에 참가자격 확인 {amountText(plan?.notice_checks ?? null, '건')}, 공고 안 AI Copilot 질문 {amountText(plan?.copilot_questions ?? null, '회')}까지 쓸 수 있습니다.
           하던 작업을 다시 시도해 주세요.
         </p>
         <div className="membership-actions"><button type="button" className="membership-primary" onClick={close}>확인</button></div>
