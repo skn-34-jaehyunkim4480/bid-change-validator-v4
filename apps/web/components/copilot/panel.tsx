@@ -290,8 +290,8 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
     <div className={`copilot-content${empty ? ' copilot-content-empty' : ''}`}>
       {empty && <div className="copilot-empty" data-state="EMPTY">
         <CopilotMascot size={64} />
-        <h3>{general ? '무엇이든 물어보세요' : caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
-        <p>{general
+        <h3>{expired ? '입찰이 끝난 공고입니다' : general ? '무엇이든 물어보세요' : caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
+        <p>{expired ? '입찰 마감이 지나 이 공고에는 더 질문할 수 없습니다.' : general
           ? '비드체크 쓰는 법과 입찰 절차·용어에 답해 드려요. 특정 공고의 판정이나 서류는 그 공고를 연 화면에서 물어봐 주세요.'
           : '저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.'}</p>
       </div>}
@@ -304,7 +304,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
           <span>이해하였습니다.</span>
         </label>
       </div>}
-      {expired && <output className="copilot-expired-note">입찰 마감이 지난 공고라 더 질문할 수 없습니다. 이전 대화는 위의 「대화 삭제」로 지울 수 있습니다.</output>}
+      {expired && !empty && <output className="copilot-expired-note">입찰 마감이 지난 공고라 더 질문할 수 없습니다. 이전 대화는 위의 「대화 삭제」로 지울 수 있습니다.</output>}
       {caseId && !expired && catalog && <section className="copilot-jobs" aria-label="검증된 업무 질문">
         <button type="button" className="copilot-jobs-toggle" aria-expanded={jobsExpanded} onClick={() => setJobsOpen({ page, open: !jobsExpanded })}>
           <span><ChevronDown size={16} aria-hidden="true" />추천 질문 6개</span>
