@@ -1,4 +1,7 @@
-﻿"""Bounded AWS draft export: strict no auto-approved tasks or training labels."""
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+"""Bounded AWS draft export: strict no auto-approved tasks or training labels."""
 import json
 import pytest
 from app.ml_recommendations.aws_task_draft import export, aws_fetch
