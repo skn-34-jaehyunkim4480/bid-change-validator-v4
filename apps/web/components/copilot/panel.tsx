@@ -22,7 +22,7 @@ const pages = { '/qualification': 'QUALIFICATION', '/ask-back': 'ASK_BACK', '/ev
 /** 일반 도우미에 알려 줄 화면 이름. 공고를 연 화면이 아니면 패널은 일반 도우미로 뜬다. */
 const SCREEN_NAMES: Array<[string, string]> = [
   ['/notices', '공고 찾기'], ['/qualification', '내 입찰 건'], ['/ask-back', '확인 필요'], ['/evidence', '근거 원문'], ['/evaluation', '평가 대응'],
-  ['/changes', '변경 이력'], ['/company', '회사 프로필'], ['/recommendations', 'AI 추천'], ['/guide', '이용안내'], ['/admin', '운영 관리'], ['/copilot', 'AI Copilot'],
+  ['/changes', '변경 이력'], ['/company', '회사 프로필'], ['/recommendations', 'AI 추천'], ['/admin', '운영 관리'], ['/copilot', 'AI Copilot'],
 ];
 export const screenNameOf = (pathname: string) => SCREEN_NAMES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
 const noJudgmentCodes = ['CURRENT_JUDGMENT_REQUIRED', 'QUALIFICATION_JUDGMENT_NOT_FOUND', 'JUDGMENT_NOT_FOUND'];

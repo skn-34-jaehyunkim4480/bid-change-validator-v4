@@ -26,14 +26,6 @@ const LEGACY_ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
   {
-    match: (pathname) => pathname === '/guide',
-    page: {
-      title: '이용안내',
-      description: '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.',
-      breadcrumb: '홈 › 이용안내',
-    },
-  },
-  {
     match: (pathname) => pathname.startsWith('/notices'),
     page: {
       title: '공고 찾기',

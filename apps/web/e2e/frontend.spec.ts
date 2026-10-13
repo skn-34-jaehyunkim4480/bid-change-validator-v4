@@ -82,22 +82,18 @@ test('login without JavaScript keeps submit disabled until hydration', async ({ 
     await context.close();
   }
 });
-test('guide uses a single shared title band and keeps complete content', async ({ page }) => {
+test('usage guide lives at the bottom of the notice page and the guide tab is gone', async ({ page }) => {
   await mockApi(page);
-  await page.goto('/guide');
+  await page.goto('/notices');
   await expect(page.locator('nav.app-primary-nav')).toBeVisible();
-  await expect(page.locator('.app-title-band h1')).toHaveText('이용안내');
-  await expect(page.getByRole('heading', { name: '이용안내', level: 1 })).toHaveCount(1);
-  await expect(page.locator('#main-content ol > li')).toHaveCount(3);
-  await expect(page.locator('#main-content main section')).toHaveCount(5);
-
-  // A client-side transition must not reintroduce the fallback title.
-  await page.locator('nav.app-primary-nav a[href="/notices"]').click();
-  await expect(page).toHaveURL(/\/notices$/);
-  await page.locator('nav.app-primary-nav a[href="/guide"]').click();
-  await expect(page).toHaveURL(/\/guide$/);
-  await expect(page.locator('.app-title-band')).toHaveCount(1);
-  await expect(page.locator('.app-title-band h1')).toHaveText('이용안내');
+  const guide = page.locator('#usage-guide');
+  await expect(guide.getByRole('heading', { name: '이용 안내', level: 2 })).toBeVisible();
+  await expect(guide.locator('ol > li')).toHaveCount(3);
+  await expect(guide.getByRole('heading', { name: '이 서비스가 하지 않는 것' })).toBeVisible();
+  // 이용안내 탭은 없다. 예전 주소로 들어가면 찾을 수 없는 화면이다.
+  await expect(page.locator('nav.app-primary-nav a[href="/guide"]')).toHaveCount(0);
+  const response = await page.goto('/guide');
+  expect(response?.status()).toBe(404);
 });
 
 test('title bands share spacing on the pages that keep them, and case pages start without one', async ({ page }) => {
@@ -105,7 +101,6 @@ test('title bands share spacing on the pages that keep them, and case pages star
   await page.setViewportSize({ width: 1440, height: 900 });
   const pages = [
     ['/recommendations', 'AI 추천', '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.', '홈 › 공고 추천'],
-    ['/guide', '이용안내', '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.', '홈 › 이용안내'],
   ];
   const positions = [];
   for (const [route, title, description, crumb] of pages) {
@@ -157,7 +152,7 @@ test('qualification navigation opens latest case before the slow analysis result
     if (path === '/api/v1/preflight-cases/case-e2e/qualification-judgment-runs') return route.fulfill({ status: 200, json: [] });
     return route.fallback();
   });
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await page.locator('nav.app-primary-nav a[href="/qualification"]').click();
   await expect(page).toHaveURL(/\/qualification\?caseId=case-e2e$/);
   await expect(page.getByRole('heading', { name: '단계별 로딩 테스트 공고' })).toBeVisible();
@@ -174,7 +169,7 @@ test('qualification navigation opens latest case before the slow analysis result
     notice: requests.filter((url) => url === '/api/v1/notices/notice-e2e').length,
     versions: requests.filter((url) => url === '/api/v1/notices/notice-e2e/versions').length,
   };
-  await page.locator('nav.app-primary-nav a[href="/guide"]').click();
+  await page.locator('nav.app-primary-nav a[href="/recommendations"]').click();
   await page.locator('nav.app-primary-nav a[href="/qualification"]').click();
   await expect(page).toHaveURL(/\/qualification\?caseId=case-e2e$/);
   await expect(page.getByRole('button', { name: '참가자격 검토 시작' }).first()).toBeVisible();
@@ -200,8 +195,8 @@ test('cached notice list survives route round trip without another GET or empty-
   expect(before.companyGets).toBe(1);
 
   for (let index = 0; index < 3; index++) {
-    await page.locator('nav.app-primary-nav a[href="/guide"]').click();
-    await expect(page).toHaveURL(/\/guide$/);
+    await page.locator('nav.app-primary-nav a[href="/recommendations"]').click();
+    await expect(page).toHaveURL(/\/recommendations$/);
     await page.locator('nav.app-primary-nav a[href="/notices"]').click();
     await expect(page).toHaveURL(/\/notices$/);
     await expect(page.getByText('2026-0001').first()).toBeVisible();
@@ -213,7 +208,7 @@ test('cached notice list survives route round trip without another GET or empty-
 
 test('session expiration redirects safely to login', async ({ page }) => {
   await mockApi(page, { authenticated: false });
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await expect(page).toHaveURL(/\/login$/);
 });
 
@@ -221,7 +216,7 @@ for (const width of [360, 768, 1440]) {
   test('authenticated shell and keyboard access at width ' + width, async ({ page }, testInfo) => {
     await mockApi(page);
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/guide');
+    await page.goto('/recommendations');
     await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toBeVisible({ timeout: 15_000 });
     const skip = page.getByRole('link', { name: '본문으로 건너뛰기' });
     await skip.focus();
@@ -230,7 +225,7 @@ for (const width of [360, 768, 1440]) {
     await expect(page.locator('#main-content')).toBeFocused();
     const size = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
     expect(size.document).toBeLessThanOrEqual(size.viewport + 1);
-    await page.screenshot({ path: testInfo.outputPath('guide-' + width + '.png'), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath('recommendations-' + width + '.png'), fullPage: true });
   });
 }
 
@@ -400,13 +395,13 @@ test('recommendations and admin reuse AppShell session without duplicate auth ch
     if (request.resourceType() === 'document') documentLoads++;
   });
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/guide');
+  await page.goto('/notices');
   await expect(page.locator('nav.app-primary-nav a[href="/admin"]')).toBeVisible();
   await expect.poll(() => authChecks).toBe(1);
   await page.evaluate(() => { (window as Window & { __authStateProof?: string }).__authStateProof = 'kept'; });
   const initialDocuments = documentLoads;
   for (let index = 0; index < 5; index++) {
-    for (const pathname of ['/recommendations', '/admin', '/guide']) {
+    for (const pathname of ['/recommendations', '/admin', '/notices']) {
       await page.locator('nav.app-primary-nav a[href="' + pathname + '"]').click();
       await expect(page).toHaveURL(new RegExp(pathname + '$'));
     }
@@ -427,19 +422,19 @@ test('client navigation preserves document and avoids repeated auth checks', asy
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
 
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await expect(page.locator('nav.app-primary-nav')).toBeVisible();
   await page.evaluate(() => { (window as Window & { __navigationProof?: string }).__navigationProof = 'kept'; });
   const initialDocuments = documentLoads;
 
   for (let index = 0; index < 20; index++) {
-    const pathname = index % 2 ? '/guide' : '/notices';
+    const pathname = index % 2 ? '/recommendations' : '/notices';
     await page.locator(`nav.app-primary-nav a[href="${pathname}"]`).click();
     await expect(page).toHaveURL(new RegExp(`${pathname}$`));
   }
   await page.goBack();
   await page.goForward();
-  await expect(page).toHaveURL(/\/guide$/);
+  await expect(page).toHaveURL(/\/recommendations$/);
 
   expect(await page.evaluate(() => (window as Window & { __navigationProof?: string }).__navigationProof))
     .toBe('kept');
