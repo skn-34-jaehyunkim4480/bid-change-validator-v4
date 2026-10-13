@@ -3,6 +3,13 @@
 The Golden bundle remains the source of truth. This script only adapts its
 company profiles to the normalized backend tables. It is intentionally blocked
 in production and does not contact G2B or OpenAI.
+
+여럿이 쓰는 DB(AWS 개발 환경)에 넣을 때는 `--shared-db` 를 준다(2026-10-13). 로컬 시험 DB 와 달리 다른 사람의
+데이터가 함께 있으므로, 골든 계정·회사·검토 건 밖의 것은 바꾸지 않는다:
+  - 이미 수집된 공고의 현재 차수를 바꾸지 않는다. 골든 차수는 현재가 아닌 차수로 덧붙인다.
+  - 없는 공고를 새로 만들 때는 게시일을 옛날로 두어 공고 목록의 맨 뒤에 오게 한다.
+  - 업종 코드 목록에 없는 코드는 비활성으로 넣어, 업종 검색이나 다른 회사의 프로필에 나타나지 않게 한다.
+  - 기본 비밀번호를 쓰지 못하고(12자 이상을 따로 줘야 한다), 비밀번호를 출력하지 않는다.
 """
 
 from __future__ import annotations
@@ -10,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -48,6 +56,10 @@ from ..qualification.analysis import qualification_analysis_version_fingerprint
 
 GOLDEN_CONTRACT_VERSION = "golden-v0.2-draft"
 DEFAULT_PASSWORD = "golden-test"
+PASSWORD_ENV = "GOLDEN_SEED_PASSWORD"
+SHARED_DB_MIN_PASSWORD = 12
+# 여럿이 쓰는 DB 에 새로 만드는 골든 공고의 게시일. 마감일이 없고 게시된 지 40일이 넘은 공고는 목록의 맨 뒤 묶음에 온다.
+SHARED_DB_POSTED_AT = datetime(2026, 1, 1, tzinfo=timezone.utc)
 CASE_PATTERN = re.compile(r"J\d{2}")
 
 
@@ -90,7 +102,7 @@ def _as_date(value: str | None) -> date | None:
     return date.fromisoformat(value) if value else None
 
 
-def _replace_company_profile(db: Session, case: dict[str, Any]) -> Company:
+def _replace_company_profile(db: Session, case: dict[str, Any], *, shared_db: bool = False) -> Company:
     case_id = case["case_id"]
     profile = case["profile"]
     company_id = UUID(profile["company_id"])
@@ -121,7 +133,8 @@ def _replace_company_profile(db: Session, case: dict[str, Any]) -> Company:
             industry = IndustryCode(
                 code=industry_code,
                 name=str(item.get("name") or industry_code),
-                active=True,
+                # 여럿이 쓰는 DB 에서는 비활성으로 넣는다 — 업종 검색에 나오지 않고 다른 회사가 고를 수 없다.
+                active=not shared_db,
                 changed_at=None,
                 source_window="golden-v0.2",
                 collected_at=now,
@@ -233,6 +246,7 @@ def _ensure_notice_version(
     case: dict[str, Any],
     *,
     create_missing_notices: bool,
+    shared_db: bool = False,
 ) -> BidNoticeVersion | None:
     version_id = UUID(case["notice_version_id"])
     version = db.get(BidNoticeVersion, version_id)
@@ -260,21 +274,33 @@ def _ensure_notice_version(
     max_version = db.scalar(
         select(func.max(BidNoticeVersion.version_number)).where(BidNoticeVersion.notice_id == notice.id)
     ) or 0
-    db.execute(
-        BidNoticeVersion.__table__.update()
-        .where(BidNoticeVersion.notice_id == notice.id)
-        .values(is_current=False)
-    )
+    # 로컬 시험 DB 에서는 골든 차수를 현재 차수로 바꿔 놓는다. 여럿이 쓰는 DB 에서는 이미 수집된 공고의 현재 차수를
+    # 건드리지 않는다 — 차수가 하나도 없던(방금 만든) 공고만 골든 차수가 현재가 된다.
+    if not shared_db:
+        db.execute(
+            BidNoticeVersion.__table__.update()
+            .where(BidNoticeVersion.notice_id == notice.id)
+            .values(is_current=False)
+        )
+    bid_notice_order = case["source_order"]
+    if shared_db and db.scalar(
+        select(BidNoticeVersion.id).where(
+            BidNoticeVersion.notice_id == notice.id, BidNoticeVersion.bid_notice_order == bid_notice_order,
+        )
+    ) is not None:
+        # 같은 공고의 같은 차수가 이미 수집돼 있다. 그 차수(와 그 분석)는 다른 사람이 쓰는 진짜 자료라 덮어쓰지 않고,
+        # 골든 차수를 다른 이름으로 따로 둔다((공고, 차수) 는 하나뿐이어야 한다).
+        bid_notice_order = f"{bid_notice_order}-golden"
     version = BidNoticeVersion(
         id=version_id,
         notice_id=notice.id,
         version_number=max_version + 1,
-        bid_notice_order=case["source_order"],
-        is_current=True,
+        bid_notice_order=bid_notice_order,
+        is_current=not shared_db or max_version == 0,
         notice_kind="골든셋 테스트",
         registration_type="테스트",
         is_reannouncement=False,
-        posted_at=now,
+        posted_at=SHARED_DB_POSTED_AT if shared_db else now,
         changed_at=None,
         bid_started_at=None,
         bid_closed_at=None,
@@ -402,11 +428,16 @@ def seed_golden_v02_accounts(
     password: str = DEFAULT_PASSWORD,
     include_analysis: bool = False,
     create_missing_notices: bool = False,
+    shared_db: bool = False,
 ) -> dict[str, Any]:
     if get_settings().app_environment == "production":
         raise RuntimeError("Golden Set accounts cannot be seeded in production")
     if len(password) < 8:
         raise ValueError("Golden test password must be at least 8 characters")
+    if shared_db and (password == DEFAULT_PASSWORD or len(password) < SHARED_DB_MIN_PASSWORD):
+        raise ValueError(
+            f"A shared database needs its own Golden password of at least {SHARED_DB_MIN_PASSWORD} characters"
+        )
     if create_missing_notices and not include_analysis:
         raise ValueError("--create-missing-notices requires --include-analysis")
 
@@ -416,12 +447,13 @@ def seed_golden_v02_accounts(
     missing_versions: list[dict[str, str]] = []
 
     for case in cases:
-        company = _replace_company_profile(db, case)
+        company = _replace_company_profile(db, case, shared_db=shared_db)
         user = _upsert_login(db, company=company, case_id=case["case_id"], password=password)
         version = _ensure_notice_version(
             db,
             case,
             create_missing_notices=create_missing_notices,
+            shared_db=shared_db,
         )
         analysis = None
         if version is None:
@@ -501,7 +533,16 @@ def seed_golden_v02_accounts(
 def main() -> None:
     parser = argparse.ArgumentParser(description="골든셋 v0.2 회사 프로필과 테스트 계정을 적재합니다.")
     parser.add_argument("--bundle-dir", type=Path, required=True)
-    parser.add_argument("--password", default=DEFAULT_PASSWORD)
+    parser.add_argument(
+        "--password",
+        default=os.environ.get(PASSWORD_ENV) or DEFAULT_PASSWORD,
+        help=f"골든 계정의 비밀번호. 주지 않으면 환경 변수 {PASSWORD_ENV}, 그것도 없으면 로컬용 기본값을 씁니다.",
+    )
+    parser.add_argument(
+        "--shared-db",
+        action="store_true",
+        help="여럿이 쓰는 DB(AWS 개발 환경)에 넣습니다. 수집된 공고의 현재 차수와 업종 코드 목록을 건드리지 않습니다.",
+    )
     parser.add_argument(
         "--include-analysis",
         action="store_true",
@@ -522,12 +563,14 @@ def main() -> None:
             password=args.password,
             include_analysis=args.include_analysis,
             create_missing_notices=args.create_missing_notices,
+            shared_db=args.shared_db,
         )
         print("Golden Set v0.2 test accounts ready")
         print(f"accounts: {result['account_count']}")
         print(f"preflight cases: {result['case_count']}")
         print(f"analysis runs: {result['analysis_count']}")
-        print(f"login pattern: golden-j01 ~ golden-j32 / {result['password']}")
+        # 여럿이 쓰는 DB 에 넣을 때는 비밀번호가 배포 기록에 남지 않게 출력하지 않는다.
+        print("login pattern: golden-j01 ~ golden-j32" + ("" if args.shared_db else f" / {result['password']}"))
         if result["missing_versions"]:
             print(f"missing notice versions: {len(result['missing_versions'])}")
     except Exception:
