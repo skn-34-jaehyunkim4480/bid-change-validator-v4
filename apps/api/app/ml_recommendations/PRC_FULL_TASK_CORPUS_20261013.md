@@ -45,3 +45,34 @@ Raw RDS excerpts, query profiles, vectors, and synthetic labels stay outside Git
 - Build independent company, notice-family and chronological holdout; no existing development labels qualify.
 - PR D separate opt-in, API reads a frozen local artifact and intersects it with *live* eligible notices; no model resident in AWS.
 - Arbitrary or changed company query must use lexical fallback when cached E5 query-hash is absent.
+
+## 2026-10-14: deterministic source-excerpt review priority queue
+
+New offline-only CLI: app.ml_recommendations.task_excerpt_risk_audit.
+It reads the existing frozen private 383-version corpus but DOES NOT alter source
+selection, remove any snippet, create labels, or change E5 embeddings.
+
+Counts for exactly the frozen corpus SHA256
+d5758f4b638b042bdbf9b6a218423c11fb6c06dbc529d6015ad0da70dcc39104:
+
+- Total 383 versions; 217 unverified task candidates; 166 title fallback.
+- 48 / 217 candidates flagged for priority human review: contract/qualification,
+  supplier-bidding terms, or absent concrete task scope in a non-task filename.
+- 169 / 217 not flagged by these rules. This is NOT evidence they are correct.
+- Reasons overlap: contract dominant 42, opening contract clause 34,
+  non-task filename/no concrete task signal 21.
+- Compared with the earlier explicitly model-authored, short-preview 25-source
+  pilot (8 flagged), the new deterministic rules catch only 4 of those 8.
+  Neither is a truth set. Do not use either to calculate source precision/recall.
+- All 217 retained as UNVERIFIED; automatically rejected=0; human reviewed=0.
+- Private report, never committed: full_task_corpus_v1/task_excerpt_risk_v1.json.
+  Has document IDs and original selected excerpt SHA for source audit.
+
+Command:
+python -m app.ml_recommendations.task_excerpt_risk_audit
+  --corpus PRIVATE/full_task_corpus_v1/corpus.json
+  --out PRIVATE/full_task_corpus_v1/task_excerpt_risk_v1.json
+
+This queue prioritizes inspecting the original source passages. No new
+independently reviewed relevance labels or validated BM25/E5 comparison were
+produced. The live AWS production recommendation behavior remains unchanged.
