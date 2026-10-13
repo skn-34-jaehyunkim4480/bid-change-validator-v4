@@ -196,9 +196,9 @@ export default function RecommendationsPage() {
             </div>
             <p className="mt-1 text-sm text-[var(--product-muted)]">조회 회사: {state.companyName}</p>
             {state.mlLoading ? (
-              <p role="status" className="mt-5 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
+              <output className="mt-5 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
                 기존 추천 계산 중입니다. 아래 업종 기반 실험 검색은 기다리지 않고 실행할 수 있습니다.
-              </p>
+              </output>
             ) : state.mlError ? (
               <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 추천 조회에 실패했습니다: {state.mlError}
@@ -363,9 +363,9 @@ export default function RecommendationsPage() {
               최근 판정 결과 최대 50건으로 전체 공고의 적격 여부를 의미하지 않습니다.
             </p>
             {state.matchingLoading ? (
-              <p role="status" className="mt-4 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
+              <output className="mt-4 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
                 저장된 자격판정 결과를 불러오는 중입니다.
-              </p>
+              </output>
             ) : state.matchingError ? (
               <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{state.matchingError}</p>
             ) : state.matches.length ? (
