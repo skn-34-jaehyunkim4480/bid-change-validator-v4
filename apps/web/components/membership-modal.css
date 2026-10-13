@@ -1,0 +1,35 @@
+/* 멤버십 창. 요금제 안내와 결제 정보 입력이 같은 창 안에서 바뀐다(components/membership-modal.tsx). */
+.membership-modal{width:min(520px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--product-line);border-radius:24px;background:var(--product-surface);color:var(--product-body);box-shadow:0 24px 64px rgba(24,32,64,.28);overflow:auto}
+.membership-modal::backdrop{background:rgba(20,26,48,.45)}
+.membership-body{position:relative;display:grid;gap:14px;padding:28px}
+.membership-close{position:absolute;top:16px;right:16px;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;color:var(--product-muted)}
+.membership-close:hover{background:var(--product-tint);color:var(--product-ink)}
+.membership-body h2{margin:0;padding-right:36px;font-size:21px;font-weight:800;line-height:30px;letter-spacing:-.03em;color:var(--product-ink)}
+.membership-lead{margin:0;font-size:14px;line-height:22px;color:var(--product-body)}
+.membership-plans{display:grid;gap:10px;margin:4px 0 0;padding:0;list-style:none}
+.membership-plan{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 16px;padding:16px 18px;border:1px solid var(--product-line);border-radius:16px}
+.membership-plan:first-child{border-color:var(--product-accent-deep)}
+.membership-plan>div{display:flex;align-items:baseline;gap:10px}
+.membership-plan strong{font-size:16px;font-weight:800;color:var(--product-ink)}
+.membership-price{font-size:15px;font-weight:700;color:var(--product-accent-deep);font-variant-numeric:tabular-nums}
+.membership-plan ul{grid-column:1;display:grid;gap:2px;margin:0;padding:0;list-style:none;font-size:13px;line-height:20px;color:var(--product-muted)}
+.membership-plan .membership-primary{grid-column:2;grid-row:1 / span 2}
+.membership-primary{min-height:44px;padding:0 20px;border-radius:12px;background:var(--product-accent-deep);color:#fff;font-size:14px;font-weight:700}
+.membership-primary:hover:not(:disabled){background:var(--product-accent)}
+.membership-secondary{min-height:44px;padding:0 16px;border:1px solid var(--product-accent-deep);border-radius:12px;background:var(--product-surface);color:var(--product-accent-deep);font-size:14px;font-weight:700;white-space:nowrap}
+.membership-primary:disabled,.membership-secondary:disabled{opacity:.5;cursor:not-allowed}
+.membership-quiet{min-height:40px;padding:0 12px;border-radius:10px;font-size:13px;font-weight:600;color:var(--product-muted)}
+.membership-quiet:hover:not(:disabled){background:var(--product-tint);color:var(--product-ink)}
+.membership-actions{display:flex;justify-content:flex-end;gap:8px}
+.membership-form{display:grid;gap:10px;padding:16px;border:1px solid var(--product-line);border-radius:16px}
+.membership-form label,.membership-code>label{display:grid;gap:5px;font-size:12px;font-weight:700;color:var(--product-muted)}
+.membership-form input,.membership-code input{width:100%;min-width:0;height:44px;padding:0 12px;border:1px solid var(--product-line);border-radius:10px;background:var(--product-surface);font-size:14px;color:var(--product-ink);font-variant-numeric:tabular-nums}
+.membership-form input:focus,.membership-code input:focus{outline:2px solid var(--product-accent);outline-offset:1px}
+.membership-form-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.membership-note{margin:0;font-size:12px;line-height:18px;color:var(--product-muted)}
+.membership-code{display:grid;gap:6px;padding:16px;border-radius:16px;background:var(--product-tint)}
+.membership-code-row{display:flex;gap:8px}
+.membership-code-row input{flex:1 1 auto}
+.membership-alert{margin:0;padding:10px 12px;border-radius:10px;background:#fdecec;color:#9a2b2b;font-size:13px;line-height:19px}
+.membership-done-mark{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--product-accent-deep);color:#fff}
+@media(max-width:480px){.membership-body{padding:22px 18px}.membership-form-row{grid-template-columns:1fr 1fr}.membership-form-row label:last-child{grid-column:1 / -1}.membership-plan{grid-template-columns:1fr}.membership-plan .membership-primary{grid-column:1;grid-row:auto}}

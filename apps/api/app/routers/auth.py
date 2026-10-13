@@ -95,7 +95,10 @@ def create_user(
             raise ApiError(403, "COMPANY_ACCESS_DENIED", "다른 회사 사용자를 만들 수 없습니다.")
         if payload.role == "ADMIN":
             raise ApiError(403, "ADMIN_CREATION_FORBIDDEN", "회사 관리자는 일반 사용자만 추가할 수 있습니다.")
-    if db.get(Company, payload.company_id) is None:
+    if payload.company_id is None:
+        if current.role != "SYSTEM_ADMIN":
+            raise ApiError(403, "COMPANY_ACCESS_DENIED", "회사가 없는 계정은 시스템 관리자만 만들 수 있습니다.")
+    elif db.get(Company, payload.company_id) is None:
         raise ApiError(404, "COMPANY_NOT_FOUND", "회사를 찾을 수 없습니다.")
     user = AppUser(
         username=payload.username,

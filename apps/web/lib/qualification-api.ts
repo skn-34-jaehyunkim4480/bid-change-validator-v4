@@ -56,6 +56,8 @@ export type CompanyProfile = {
   certifications: Array<{
     id: string;
     name: string;
+    /** 공고가 번호로 요구하는 값(세부품명번호, 업종·면허 코드 등). 판정은 이 값을 요건의 번호와 비교한다. */
+    certification_code?: string | null;
     certificate_number: string | null;
     issuer_name: string | null;
     issued_at: string | null;
@@ -290,6 +292,26 @@ export function createCompany(payload: CompanyCreatePayload) {
   });
 }
 
+export type ProcurementCompany = {
+  /** false 면 그 사업자등록번호로 나라장터에 등록된 업체가 없다. */
+  found: boolean;
+  business_registration_number: string;
+  name: string | null;
+  /** 시·도 코드(두 자리). lib/company-regions.ts 의 코드와 같다. */
+  region_code: string | null;
+  region_name: string | null;
+  address: string | null;
+  opened_on: string | null;
+  industries: Array<{ code: string; name: string; representative: boolean; registrable: boolean }>;
+  products: Array<{ code: string; name: string }>;
+};
+
+/** 사업자등록번호로 조달청 나라장터의 등록 정보를 찾는다. 프로필은 바꾸지 않는다. */
+export function lookupProcurementCompany(businessRegistrationNumber: string) {
+  const search = new URLSearchParams({ business_registration_number: businessRegistrationNumber });
+  return request<ProcurementCompany>(`/api/v1/companies/procurement-lookup?${search}`, undefined, false);
+}
+
 export function updateCompany(companyId: string, payload: Partial<CompanyCreatePayload>) {
   return request<CompanyProfile>(`/api/v1/companies/${companyId}`, {
     method: 'PATCH',
@@ -392,10 +414,11 @@ export function getQualificationJudgment(runId: string) {
   return request<QualificationJudgmentRun>(`/api/v1/qualification-judgment-runs/${runId}`);
 }
 
-export function runQualificationJudgment(caseId: string, analysisRunId: string) {
+/** analysisRunId 를 주지 않으면 서버가 그 검토 건의 최신 분석으로 판정한다. */
+export function runQualificationJudgment(caseId: string, analysisRunId?: string) {
   return request<QualificationJudgmentRun>(`/api/v1/preflight-cases/${caseId}/qualification-judgments`, {
     method: 'POST',
-    body: JSON.stringify({ analysis_run_id: analysisRunId }),
+    body: JSON.stringify(analysisRunId ? { analysis_run_id: analysisRunId } : {}),
   });
 }
 

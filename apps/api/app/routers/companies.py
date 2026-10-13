@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..auth import authorize_company_access, get_optional_current_user
 from ..auth_models import AppUser
+from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
 from ..models import (
@@ -32,9 +33,13 @@ from ..schemas import (
     PerformanceCreate,
     PerformanceRead,
     PerformanceUpdate,
+    ProcurementCompanyRead,
+    ProcurementIndustryRead,
+    ProcurementProductRead,
     StaffRead,
     StaffRoleRead,
 )
+from ..services.procurement_company import G2BApiError, fetch_procurement_company, normalize_business_number
 
 
 router = APIRouter(prefix="/api/v1/companies", tags=["companies"])
@@ -218,7 +223,10 @@ def create_company(
     db: Session = Depends(get_db),
     user: AppUser | None = Depends(get_optional_current_user),
 ) -> CompanyRead:
-    if user is not None and user.role != "SYSTEM_ADMIN":
+    # 회사가 아직 없는 계정은 자기 회사 프로필을 한 번 만들 수 있다. 만들면 그 회사의 관리자가 된다(2026-10-13).
+    # 이미 회사가 있는 계정은 회사를 더 만들 수 없다.
+    founding = user is not None and user.role != "SYSTEM_ADMIN" and user.company_id is None
+    if user is not None and user.role != "SYSTEM_ADMIN" and not founding:
         raise ApiError(403, "COMPANY_CREATION_FORBIDDEN", "회사 생성 권한이 없습니다.")
     industries = _validate_industry_codes(db, payload.industry_codes)
     company = Company(
@@ -252,8 +260,61 @@ def create_company(
         )
         for role in payload.staff.roles
     ]
+    if founding:
+        user.company_id = company.id
+        user.role = "ADMIN"
     _commit(db, "이미 등록된 사업자등록번호입니다.")
     return _company_response(_load_company(db, company.id))
+
+
+@router.get("/procurement-lookup", response_model=ProcurementCompanyRead)
+def lookup_procurement_company(
+    business_registration_number: str,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> ProcurementCompanyRead:
+    """사업자등록번호로 조달청 등록 정보를 찾아 준다. 찾기만 하고 프로필은 바꾸지 않는다(반영은 PATCH 로 한다).
+
+    회사에 사업자등록번호가 이미 저장돼 있으면 그 번호만 조회할 수 있다 — 다른 회사의 등록 정보로
+    자기 프로필을 채우지 못하게 한다. 시스템 관리자와 번호가 아직 없는 회사는 어떤 번호든 조회한다.
+    """
+    try:
+        bizno = normalize_business_number(business_registration_number)
+    except ValueError as error:
+        raise ApiError(422, "INVALID_BUSINESS_NUMBER", str(error)) from error
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        company = db.get(Company, user.company_id) if user.company_id is not None else None
+        saved = company.business_registration_number if company is not None else None
+        if saved and saved != bizno:
+            raise ApiError(403, "BUSINESS_NUMBER_MISMATCH", "회사에 등록된 사업자등록번호로만 조회할 수 있습니다.")
+    service_key = get_settings().decoded_g2b_service_key
+    if not service_key:
+        raise ApiError(503, "G2B_NOT_CONFIGURED", "조달청 조회 설정이 없어 불러올 수 없습니다.")
+    try:
+        found = fetch_procurement_company(bizno, service_key=service_key)
+    except G2BApiError as error:
+        raise ApiError(502, "PROCUREMENT_LOOKUP_FAILED", "조달청 조회에 실패했습니다. 잠시 뒤 다시 시도해 주세요.") from error
+    if found is None:
+        return ProcurementCompanyRead(found=False, business_registration_number=bizno)
+    known = set(db.scalars(
+        select(IndustryCode.code).where(
+            IndustryCode.code.in_([code for code, _, _ in found.industries]), IndustryCode.active.is_(True),
+        )
+    )) if found.industries else set()
+    return ProcurementCompanyRead(
+        found=True,
+        business_registration_number=bizno,
+        name=found.name or None,
+        region_code=found.province_code,
+        region_name=found.region_name,
+        address=found.address,
+        opened_on=found.opened_on,
+        industries=[
+            ProcurementIndustryRead(code=code, name=name, representative=representative, registrable=code in known)
+            for code, name, representative in found.industries
+        ],
+        products=[ProcurementProductRead(code=code, name=name) for code, name in found.products],
+    )
 
 
 @router.get("", response_model=list[CompanyRead])

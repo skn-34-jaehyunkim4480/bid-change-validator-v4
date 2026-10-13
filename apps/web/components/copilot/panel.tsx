@@ -11,8 +11,10 @@ import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
+import { MEMBERSHIP_REQUIRED, membershipModal, useMembership } from '@/lib/membership';
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
+import { getPreflightCase } from '@/lib/api';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
 import './panel.css';
 
@@ -20,7 +22,7 @@ const pages = { '/qualification': 'QUALIFICATION', '/ask-back': 'ASK_BACK', '/ev
 /** 일반 도우미에 알려 줄 화면 이름. 공고를 연 화면이 아니면 패널은 일반 도우미로 뜬다. */
 const SCREEN_NAMES: Array<[string, string]> = [
   ['/notices', '공고 찾기'], ['/qualification', '내 입찰 건'], ['/ask-back', '확인 필요'], ['/evidence', '근거 원문'], ['/evaluation', '평가 대응'],
-  ['/changes', '변경 이력'], ['/company', '회사 프로필'], ['/recommendations', 'AI 추천'], ['/guide', '이용안내'], ['/admin', '운영 관리'], ['/copilot', 'AI Copilot'],
+  ['/changes', '변경 이력'], ['/company', '회사 프로필'], ['/recommendations', 'AI 추천'], ['/admin', '운영 관리'], ['/copilot', 'AI Copilot'],
 ];
 export const screenNameOf = (pathname: string) => SCREEN_NAMES.find(([prefix]) => pathname.startsWith(prefix))?.[1];
 const noJudgmentCodes = ['CURRENT_JUDGMENT_REQUIRED', 'QUALIFICATION_JUDGMENT_NOT_FOUND', 'JUDGMENT_NOT_FOUND'];
@@ -170,19 +172,32 @@ function savePanelSize(size: PanelSize | null) {
   } catch { /* 저장소 차단 — 이번 방문에만 유지 */ }
 }
 
+/** 이 대화의 공고가 입찰 마감이 지났는가(2026-10-13). 일반 도우미와 확인 전에는 false. 만료되면 질문은 막고 대화는 지울 수 있다. */
+export function useCaseExpired(caseId: string): boolean {
+  const [known, setKnown] = useState<{ caseId: string; expired: boolean }>({ caseId: '', expired: false });
+  useEffect(() => {
+    if (!caseId || caseId === GENERAL_CONVERSATION_ID) return;
+    let alive = true;
+    getPreflightCase(caseId).then(item => { if (alive) setKnown({ caseId, expired: item.expired === true }); }).catch(() => { /* 모르면 막지 않는다 */ });
+    return () => { alive = false; };
+  }, [caseId]);
+  return known.caseId === caseId && known.expired;
+}
+
 function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
   const { store, state } = useCopilot(caseId);
+  const expired = useCaseExpired(caseId);
   const last = [...state.turns].reverse().find(turn => turn.response?.product_state)?.response?.product_state;
   const summary = last && 'overall_status' in last ? last : null;
   const version = last && ('version_number' in last.provenance ? last.provenance.version_number : last.provenance.current.version_number);
   return <header className="copilot-header">
-    <CopilotMascot /><h2 id="copilot-title">AI Copilot</h2>{caseId === GENERAL_CONVERSATION_ID && <span className="copilot-mode">일반 도우미</span>}
+    <CopilotMascot /><h2 id="copilot-title">AI Copilot</h2>{caseId === GENERAL_CONVERSATION_ID && <span className="copilot-mode">일반 도우미</span>}{expired && <span className="copilot-expired">만료됨</span>}
     <div className="copilot-header-badges" aria-label="최근 조회한 판정 기준">
       {version != null && <span className="copilot-badge">조회 v{version}</span>}
       {summary && !state.error && <span className={`copilot-badge copilot-status-${summary.overall_status}`}>{getCopilotStatusLabel(summary.overall_status)}</span>}
     </div>
     {caseId && state.turns.length > 0 && <button type="button" className="copilot-new-conversation"
-      disabled={state.busy} onClick={() => store.newConversation(caseId)}>새 대화</button>}
+      disabled={state.busy} onClick={() => store.newConversation(caseId)}>{expired ? '대화 삭제' : '새 대화'}</button>}
     {caseId && <CopilotNavigationLink caseId={caseId} className="copilot-expand" href={href('/copilot', caseId)} aria-label="큰 화면에서 보기" title="큰 화면에서 보기"><Maximize2 size={16} /></CopilotNavigationLink>}
     <button type="button" className="copilot-close" aria-label="도우미 닫기" onClick={close}><X size={18} /></button>
   </header>;
@@ -260,14 +275,23 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
     if (readsDocuments(job.job_id)) ask(`${job.label}: ${item.label}`, undefined, undefined, true);
     else ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id });
   };
+  // 요금제 한도를 넘어 막힌 질문이면 멤버십 창을 띄운다. 같은 실패에 한 번만 뜨도록 대화의 순번에 맞춘다.
+  useEffect(() => {
+    if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open('COPILOT_QUESTION');
+  }, [state.errorCode, state.revision]);
+  const expired = useCaseExpired(caseId);
+  // 이 공고 대화에서 남은 질문 수(요금제 한도가 있는 계정만). 답이 올 때마다 다시 읽는다.
+  const membership = useMembership(general ? undefined : caseId || undefined, `${state.revision}:${state.busy}`);
+  const questionLimit = !general && caseId && !expired && membership?.limited ? membership.limits.copilot_questions : null;
+  const questionsLeft = questionLimit == null ? null : Math.max(0, questionLimit - (membership?.used.copilot_questions ?? 0));
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>
     <div className={`copilot-content${empty ? ' copilot-content-empty' : ''}`}>
       {empty && <div className="copilot-empty" data-state="EMPTY">
         <CopilotMascot size={64} />
-        <h3>{general ? '무엇이든 물어보세요' : caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
-        <p>{general
+        <h3>{expired ? '입찰이 끝난 공고입니다' : general ? '무엇이든 물어보세요' : caseId ? '이 공고에 대해 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
+        <p>{expired ? '입찰 마감이 지나 이 공고에는 더 질문할 수 없습니다.' : general
           ? '비드체크 쓰는 법과 입찰 절차·용어에 답해 드려요. 특정 공고의 판정이나 서류는 그 공고를 연 화면에서 물어봐 주세요.'
           : '저장된 판정 결과와 공고문을 근거로 답해 드려요. 아래 입력창에 자유롭게 질문하거나 추천 질문을 고를 수 있어요.'}</p>
       </div>}
@@ -280,7 +304,8 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
           <span>이해하였습니다.</span>
         </label>
       </div>}
-      {caseId && catalog && <section className="copilot-jobs" aria-label="검증된 업무 질문">
+      {expired && !empty && <output className="copilot-expired-note">입찰 마감이 지난 공고라 더 질문할 수 없습니다. 이전 대화는 위의 「대화 삭제」로 지울 수 있습니다.</output>}
+      {caseId && !expired && catalog && <section className="copilot-jobs" aria-label="검증된 업무 질문">
         <button type="button" className="copilot-jobs-toggle" aria-expanded={jobsExpanded} onClick={() => setJobsOpen({ page, open: !jobsExpanded })}>
           <span><ChevronDown size={16} aria-hidden="true" />추천 질문 6개</span>
           <span>{jobsExpanded ? '접기' : '보기'}</span>
@@ -344,7 +369,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
     </div>
     <form className="copilot-input" onSubmit={event => {
       event.preventDefault();
-      if (!question.trim() || state.busy || !caseId) return;
+      if (!question.trim() || state.busy || !caseId || expired) return;
       ask(question, undefined, undefined, true);
       setQuestion('');
     }}>
@@ -358,11 +383,11 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : general ? '무엇이든 물어보세요' : '이 공고에 대해 물어보세요'}
-          disabled={!caseId || state.busy || !semanticProcessing} />
-        <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
+          placeholder={expired ? '만료된 공고라 질문할 수 없어요' : caseId && !semanticProcessing ? '안내를 확인하면 질문할 수 있어요' : general ? '무엇이든 물어보세요' : '이 공고에 대해 물어보세요'}
+          disabled={!caseId || expired || state.busy || !semanticProcessing} />
+        <button type="submit" aria-label="질문 보내기" disabled={!caseId || expired || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
-      <small>Enter 전송 · Shift+Enter 줄바꿈</small>
+      <small>Enter 전송 · Shift+Enter 줄바꿈{questionsLeft != null && <span className="copilot-quota" title="이 공고에서 AI Copilot 에 물을 수 있는 남은 횟수"> · 남은 질문 {questionsLeft}/{questionLimit}</span>}</small>
     </form>
   </>;
 }

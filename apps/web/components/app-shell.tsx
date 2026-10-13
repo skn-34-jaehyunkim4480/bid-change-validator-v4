@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { AppUserProvider } from '@/components/app-user-context';
 import { CopilotProvider } from '@/components/copilot/provider';
 import { CopilotPanel } from '@/components/copilot/panel';
+import { MembershipModal } from '@/components/membership-modal';
 
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
@@ -16,6 +17,7 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 import { replaceWith } from '@/lib/navigation';
+import { forgetCase } from '@/lib/last-case';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -24,14 +26,6 @@ type PageInfo = TitleBandProps & {
 const LEGACY_ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
-  {
-    match: (pathname) => pathname === '/guide',
-    page: {
-      title: '이용안내',
-      description: '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.',
-      breadcrumb: '홈 › 이용안내',
-    },
-  },
   {
     match: (pathname) => pathname.startsWith('/notices'),
     page: {
@@ -185,6 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!active) return;
           if (cause instanceof ApiError && cause.status === 401) {
             window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+            forgetCase();
             setUser(null);
             replaceWith('/login');
             return;
@@ -246,11 +241,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await logout();
       window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+      forgetCase();
       setUser(null);
       replaceWith('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
         window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+        forgetCase();
         setUser(null);
         replaceWith('/login');
         return;
@@ -288,6 +285,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div id="main-content" tabIndex={-1} className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
         <AppFooter />
         <CopilotPanel />
+        <MembershipModal />
       </div>
       </CopilotProvider>
     </AppUserProvider>

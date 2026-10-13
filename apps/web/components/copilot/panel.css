@@ -89,7 +89,8 @@
 .copilot-page-list h2{padding:18px 14px 8px;font-size:13px;color:var(--product-muted)}
 .copilot-page-item[aria-current=page]{background:var(--product-tint)}
 .copilot-panel.copilot-page-chat{border:0;border-radius:0;background:transparent;font-size:15px;line-height:24px}
-.copilot-page-chat .copilot-header{border-bottom:0;padding:14px 28px 6px;min-height:0}
+/* 머리의 단추들이 본문 폭(920px) 밖 화면 끝으로 가지 않게, 본문 칸의 양쪽 끝에 맞춘다(2026-10-13). */
+.copilot-page-chat .copilot-header{border-bottom:0;padding:14px max(28px,calc((100% - 920px)/2)) 6px;min-height:0}
 .copilot-page-chat .copilot-header h2{font-size:15px;font-weight:700;color:var(--product-body)}
 .copilot-page-chat .copilot-content{padding:8px 28px 20px;gap:22px}
 .copilot-page-chat .copilot-turn{gap:18px;margin-top:0}
@@ -140,3 +141,12 @@
 .copilot-badge{flex:none;white-space:nowrap}
 .copilot-header-badges .copilot-badge:first-child:not(:only-child){flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .copilot-new-conversation{white-space:nowrap}
+/* 남은 질문 수(요금제 한도). 입력창 아래 안내 줄에 작은 글씨로 붙는다. */
+.copilot-quota{color:var(--product-muted);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* 만료된 공고의 대화: 진한 회색 '만료됨' 표시와 안내(질문은 막힌다). */
+.copilot-expired{flex:none;padding:2px 8px;border-radius:999px;background:#5b6170;color:#fff;font-size:12px;font-weight:700;white-space:nowrap}
+.copilot-expired-note{display:block;margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#dfe2e8;color:#3d4350;font-size:13px;line-height:19px}
+.copilot-page-item[data-expired]{background:#e9ebf0}
+.copilot-page-item[data-expired]:hover{background:#dfe2e8}
+.copilot-page-item .copilot-expired{display:inline-block;color:#fff;font-size:11px;line-height:16px;overflow:visible;text-overflow:clip;vertical-align:1px}
+.copilot-page-chat .copilot-expired-note{width:100%;max-width:920px;margin-inline:auto}

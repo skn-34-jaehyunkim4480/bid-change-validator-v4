@@ -150,6 +150,12 @@ class G2BClient:
             "regions": self._fetch_all_by_notice("getBidPblancListInfoPrtcptPsblRgn", bid_notice_no, bid_notice_order),
         }
 
+    def fetch_endpoint_page(self, endpoint: str, params: dict[str, str | int]) -> G2BPage:
+        """공고 목록이 아닌 다른 조달청 조회를 한 쪽 부른다(예: 사용자정보 서비스). pageNo·numOfRows 는 params 에 준다."""
+        return self._fetch_json_page(
+            endpoint=endpoint, params={"serviceKey": self._service_key, "type": "json", **params},
+        )
+
     def _fetch_all_by_notice(self, endpoint: str, bid_notice_no: str, bid_notice_order: str) -> list[dict]:
         items: list[dict] = []
         page_number = 1
@@ -191,6 +197,9 @@ class G2BClient:
             ) from error
 
         root = payload.get("response", {}) if isinstance(payload, dict) else {}
+        if not root and isinstance(payload, dict):
+            # 오류 응답은 "response" 대신 "nkoneps.com.response.ResponseError" 같은 이름 아래에 header 만 온다.
+            root = next((value for value in payload.values() if isinstance(value, dict) and "header" in value), {})
         header = root.get("header", {}) or {}
         result_code = str(header.get("resultCode", ""))
         if result_code != "00":

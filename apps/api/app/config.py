@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     participation_limits_lookup_enabled: bool = True
     qualification_self_service_enabled: bool = False
     qualification_self_service_daily_limit: int = Field(default=3, ge=1, le=100)
+    # 요금제 한도(membership.py). 켠 환경에서만 계정별 월 한도를 적용한다 — 시연 환경에서 켠다.
+    membership_limits_enabled: bool = False
+    # 시연용 멤버십 코드. 비워 두면 화면에서 가입할 수 없다(결제는 붙어 있지 않다).
+    membership_demo_code: str | None = None
     auth_bootstrap_admin_username: str = "admin"
     auth_bootstrap_admin_password: str = "admin"
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
