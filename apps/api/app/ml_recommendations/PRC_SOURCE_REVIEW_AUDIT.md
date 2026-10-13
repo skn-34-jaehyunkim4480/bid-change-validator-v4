@@ -97,3 +97,38 @@ Local private files: alternate_targets_8.json; alternate_small_0.json, alternate
 Among the eight recovered notice versions, 3 are involved in previously observed confirmed notice_relations edges; several links leave the sampled universe. Family closure is unproven. No valid chronological/company/family holdout exists, and BM25/E5/Hybrid full-task accuracy is not measured.
 
 Five new offline source validation/regression tests added; total relevant local tests: 52 passed. No paid OpenAI API usage, no AWS writes, no production inference change, and no PR merges. The other 12 inconclusive versions await alternative-source content examination and review.
+## 2026-10-13: remaining 12 alternate attachments — source-block validation
+
+This is additional to the first eight alternates, not a recount of the original 49 candidate reviews. All 20 previously inconclusive notice versions now have an alternate selected document inspected at source-block level, but some sources still lack detailed work scope.
+
+### Bounded AWS READ ONLY results
+
+- Queried exactly 12 additional version-bound documents in batches of two via existing AWS read-only EC2 SSM -> RDS pathway, with read-only SQL and 8-second statement timeout.
+- First-stage previews were capped at 700 characters per source block. Re-fetched the **complete untruncated text of all SELECTED evidence blocks** (12,514 characters total) in bounded pairs, and verified selected original block text prefixes against their earlier preview, indices, version IDs and original/extracted hash metadata.
+- Local private evidence: alternate_targets_remaining_12.json; alternate_remaining_0/2/4/6/8/10.json; alternate_review_remaining_v1; alternate_remaining_full_0/2/4/6/8/10.json; alternate_remaining_full_manifest.json. Previous first-eight reviews still verify (8/8), the new 12 verify (12/12).
+- Original complete PDF/HWP/S3 bytes were NOT independently rehashed. Unselected blocks, missing ZIP/XLSX specifications and full source-document completeness were NOT verified.
+
+### 12 examined version scopes
+
+**6 preliminary direct project/product excerpts:** ferro-titanium chemistry specifications, school uniforms supply quantities, second version of Gangbuk civil construction, two Non-GMO soybean purchase tender notices, and integrated ONIX/Miniscope/HARP neuroscience instrumentation.
+
+**5 partial scope only:** 7kW EV charger procurement, soybean purity/testing supply conditions, 30 scientific reagent products without the detailed spreadsheet, pathogen diagnostic sera without a supplied ZIP specification, and playground fire-protection construction without item schedule.
+
+**1 insufficient source:** real-estate transaction information-system auditing/supervision notice points to a separate, unavailable detailed proposal.
+
+All statuses are MODEL-REVIEWED EXCERPT ONLY, never HUMAN_REVIEWED or full business-task Golden. The 20 version count includes previously inspected versions: no new golden/full-task evaluation cases claimed.
+
+### Exact evidence leakage risks
+
+The 20 audited notice versions map to **19 distinct notice IDs**, since indexes **28 and 32** are two versions of the SAME notice. Distinct indexes **37 and 38** have identical RDS extracted-text SHA256 even though their attachment file hashes differ: do not place them across data splits. A bounded notice_relations walk for 19 seeds followed **7 CONFIRMED relation edges to 26 visited notice IDs**, including **5 notices with external-sample relation neighbors**. This is a partial graph walk and does NOT prove closure of unrecorded relationships or similarity groups. FAMILY_CLOSURE_UNVERIFIED remains enforced.
+
+### Code, tests and limits
+
+- Refactored fixed-eight alternate source review to bounded 1..25 sources with explicit sample files, per-version scope status and backward-compatible eight-source replay.
+- Verified selected full RDS blocks against cached previews and their original version/hash metadata; reject missing, duplicate, modified or cross-version evidence.
+- Block new positive labeling from excerpts explicitly classified as PARTIAL_TASK_EXCERPT or INSUFFICIENT_SOURCE; never implicitly grant human approval or independent-test split.
+- Added regression for 12-source configuration, previous 8-source results, complete-block drift and same-notice vs identical-extracted-text collision.
+- **57 related ML tests passed**. GPT-6 development-only labels remain **136**, with **21 grade >=2**. No additional grades created by source review; zero new paid API calls, AWS writes, operating model changes or merges. No independent full-task BM25/E5/Hybrid accuracy calculated.
+- Private family and provenance reports: alternate_family_overlap_audit.json, alternate_notice_lineage_20.json, alternate_remaining_full_manifest.json.
+
+Next gate: gather truly distinct task families and profiles, independently reviewed test judgments, time/family/company splits, and assess full-universe independent retrieval. Unsupported ZIP/XLSX task specifics remain a data-quality issue.
