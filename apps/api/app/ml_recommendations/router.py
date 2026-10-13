@@ -370,10 +370,12 @@ def experimental_live_candidate_map(db: Session, *, now: datetime | None = None)
 # Experimental, opt-in CPU retrieval. Production /ml handler remains unchanged.
 class ExperimentalRecommendationRequest(MLRecommendationRequest):
     mode: Literal["bm25", "e5_small", "hybrid_rrf"] = "hybrid_rrf"
+    query_strategy: Literal["legacy", "industry_v1"] = "legacy"
 
 
 class ExperimentalRecommendationResponse(BaseModel):
     experiment: Literal["offline_task_corpus_v1"] = "offline_task_corpus_v1"
+    query_strategy_used: Literal["legacy", "industry_v1"] = "legacy"
     mode_requested: str
     mode_used: str
     fallback_used: bool
@@ -425,6 +427,7 @@ def recommend_experimental(
         raise HTTPException(status_code=503, detail="Experimental offline artifacts are not configured")
 
     query = request.query
+    strategy_used = "legacy"
     if request.company_id is not None:
         authorize_company_access(user, request.company_id)
         try:
@@ -432,7 +435,16 @@ def recommend_experimental(
         except (LookupError, ValueError) as error:
             raise HTTPException(status_code=404, detail="Company not found") from error
         if query is None:
-            query = company_query(company)
+            if request.query_strategy == "industry_v1":
+                from .experimental_query import industry_task_query
+                normalized = industry_task_query(company)
+                if normalized:
+                    query = normalized
+                    strategy_used = "industry_v1"
+                else:
+                    query = company_query(company)
+            else:
+                query = company_query(company)
     if not query or not query.strip():
         raise HTTPException(status_code=422, detail="Query or company profile required")
 
@@ -503,6 +515,7 @@ def recommend_experimental(
     eligible, review = partition_ranked(db, request.company_id, ranked,
                                        request.limit, result["mode_used"], query)
     return ExperimentalRecommendationResponse(
+        query_strategy_used=strategy_used,
         mode_requested=request.mode, mode_used=result["mode_used"],
         fallback_used=result["fallback_used"], fallback_reason=result["fallback_reason"],
         valid_live_candidates=len(valid_map), indexed_live_candidates=result["valid_indexed_count"],

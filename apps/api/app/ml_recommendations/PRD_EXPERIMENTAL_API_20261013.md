@@ -107,3 +107,45 @@ Regression tests:
 - Entire targeted ML regression suite: 83 passed locally.
 
 No PR merge or AWS production deployment performed as part of this correction. The AWS sidecar used in the preceding integration tests has already been removed.
+
+## 2026-10-14: experimental opt-in industry/task query BM25
+
+Only the experimental POST /api/v1/recommendations/ml-experimental accepts
+query_strategy=industry_v1. Existing API requests default to legacy.
+Production /ml, shared company_query() and existing legacy experiment are
+UNCHANGED. The response exposes query_strategy_used, including fallback to
+legacy when no usable capability fields are present. The explicit user text
+query is preserved verbatim.
+
+For a company-ID request without explicit query, industry_v1 constructs text
+from industry names/codes and relevant performance, certification and staff
+role names, explicitly excluding company name, region and company size from
+text similarity. Company region and other attributes remain available for
+deterministic eligibility checks. This version uses reusable, limited
+industry-task concepts (travel, waste, software, food, design, engineering,
+events, vehicle, medical, electricity, construction and agriculture). Domestic
+travel does not expand to international-only tasks. Industry synonyms are
+retrieval cues, not legal qualification rules.
+
+To test, POST:
+  {"company_id":"AUTHORIZED-UUID","query_strategy":"industry_v1","mode":"bm25","limit":5}
+
+The new text SHA does not match old cached E5 query vectors. If the caller
+requests Hybrid/E5 with an absent exact query vector, the runtime safely
+falls back to BM25 and reports mode_used=bm25 plus its fallback_reason.
+Document vectors are unchanged; no model or training modifications.
+
+32 synthetic Golden companies evaluated using a frozen AWS read-only snapshot
+of 3,585 live notices and their real, minimal company capability records.
+J22 BM25 travel-topic title hits at Top10 improved from 0 to 10, and
+Yeongam R26BK01741999 rank from 3580 to 14. Across the 27 profiles with
+concept entries, 24 increased weak industry-keyword title matches at Top10,
+3 stayed unchanged and 0 declined; 5 did not have such a diagnostic concept.
+These are development-only textual proxies (the same synonym words define
+the proxy), NOT independent accuracy, eligibility or verified precision.
+
+AWS RDS read-only check: structured participation_limits populated on only
+1 out of 5,996 current notice versions (including closed). Consequently
+there is NO safe comprehensive region/license hard filter yet. Unknown
+restrictions remain needs_review, not core_met or core_unmet.
+No production deployment, no PR merge and no paid model invocations.
