@@ -131,8 +131,10 @@ export default function CompanyPage() {
   const [error, setError] = useState('');
   const [industryQuery, setIndustryQuery] = useState('');
   const [industryOptions, setIndustryOptions] = useState<MasterCode[]>([]);
-  // 마지막으로 찾은 낱말과 전체 건수. 예전에는 결과를 6개만 보여 줘 뒤쪽 업종은 없는 것처럼 보였다(2026-10-14).
-  const [industrySearch, setIndustrySearch] = useState<{ query: string; total: number } | null>(null);
+  // 검색 결과는 처음에 6개만 보이고, 「더보기」를 누르면 펼쳐져 상자 안에서 넘겨 본다(2026-10-14).
+  const [industryTotal, setIndustryTotal] = useState(0);
+  const [industryExpanded, setIndustryExpanded] = useState(false);
+  const shownIndustryOptions = industryExpanded ? industryOptions : industryOptions.slice(0, INDUSTRY_PREVIEW);
   // 저장 전 업종 목록. null이면 「서버 값 그대로」라는 뜻이고, 배열이면 편집 중이다.
   const [industryDraft, setIndustryDraft] = useState<Array<{ code: string; name: string }> | null>(null);
   // 소재지·기업 구분·상시 근로자. 업종과 같은 규칙 — null이면 「서버 값 그대로」다.
@@ -384,7 +386,8 @@ export default function CompanyPage() {
     try {
       const result = await searchIndustryCodes(industryQuery);
       setIndustryOptions(result.items);
-      setIndustrySearch({ query: industryQuery.trim(), total: result.total });
+      setIndustryTotal(result.total);
+      setIndustryExpanded(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '업종 검색에 실패했습니다.');
     }
@@ -492,9 +495,8 @@ export default function CompanyPage() {
                     onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchIndustries(); } }} />
                   <Button variant="outline" onClick={() => void searchIndustries()}><Search />검색</Button>
                 </div>
-                <IndustrySearchSummary search={industrySearch} shown={industryOptions.length} />
-                <div className="mt-3 grid max-h-[336px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                  {industryOptions.map((item) => {
+                <div className={`mt-3 grid gap-2 sm:grid-cols-2 ${industryExpanded ? 'max-h-[336px] overflow-y-auto pr-1' : ''}`}>
+                  {shownIndustryOptions.map((item) => {
                     const picked = createIndustries.some((row) => row.code === item.code);
                     return (
                       <button key={item.code} type="button" aria-pressed={picked}
@@ -505,7 +507,9 @@ export default function CompanyPage() {
                       </button>
                     );
                   })}
+                  {industryOptions.length === 0 && <p className="text-[13px] text-[var(--product-muted)] sm:col-span-2">찾은 업종이 없습니다. 다른 낱말이나 코드로 검색해 보세요.</p>}
                 </div>
+                <IndustryMore shown={shownIndustryOptions.length} loaded={industryOptions.length} total={industryTotal} expanded={industryExpanded} onToggle={() => setIndustryExpanded((value) => !value)} />
               </div>
 
               <Button className="mt-8 rounded-full px-6" onClick={() => void submitCompany()} disabled={!form.name.trim() || createIndustries.length === 0 || busy !== null}>
@@ -606,9 +610,8 @@ export default function CompanyPage() {
                 <Button variant="outline" onClick={() => void searchIndustries()}><Search />검색</Button>
               </div>
 
-              <IndustrySearchSummary search={industrySearch} shown={industryOptions.length} />
-              <div className="mt-3 grid max-h-[336px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                {industryOptions.map((item) => {
+              <div className={`mt-3 grid gap-2 sm:grid-cols-2 ${industryExpanded ? 'max-h-[336px] overflow-y-auto pr-1' : ''}`}>
+                {shownIndustryOptions.map((item) => {
                   const added = industryList.some((row) => row.code === item.code);
                   return (
                     <button
@@ -624,6 +627,7 @@ export default function CompanyPage() {
                   );
                 })}
               </div>
+              <IndustryMore shown={shownIndustryOptions.length} loaded={industryOptions.length} total={industryTotal} expanded={industryExpanded} onToggle={() => setIndustryExpanded((value) => !value)} />
 
               {industryBlock ? (
                 <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-[13px] leading-[1.7] text-rose-800">{industryBlock}</p>
@@ -748,24 +752,17 @@ export default function CompanyPage() {
   );
 }
 
-/** 업종 검색 결과 요약. 몇 건 중 몇 건을 보여 주는지, 없는 코드인지 알려 준다. */
-function IndustrySearchSummary({ search, shown }: { search: { query: string; total: number } | null; shown: number }) {
-  if (!search?.query) return null;
-  if (search.total === 0) {
-    return (
-      <p className="mt-3 text-[13px] leading-[1.7] text-amber-700">
-        「{search.query}」에 맞는 업종이 없습니다.
-        {/^\d{4}$/.test(search.query)
-          ? ' 조달청 업종 목록에 없는 코드입니다. 업종명으로 찾아 보세요.'
-          : ' 다른 낱말이나 업종코드 4자리로 찾아 보세요.'}
-      </p>
-    );
-  }
+const INDUSTRY_PREVIEW = 6;
+
+/** 업종 검색 결과의 「더보기」. 눌러야 목록이 펼쳐지고, 펼친 뒤에는 상자 안에서 넘겨 본다. */
+function IndustryMore({ shown, loaded, total, expanded, onToggle }: { shown: number; loaded: number; total: number; expanded: boolean; onToggle: () => void }) {
+  if (loaded <= INDUSTRY_PREVIEW) return null;
   return (
-    <p className="mt-3 text-[12.5px] tabular-nums text-[var(--product-muted)]">
-      {search.total > shown
-        ? `${search.total}건 중 ${shown}건을 보여 줍니다. 낱말을 더 넣으면 좁혀집니다.`
-        : `${search.total}건 찾음`}
-    </p>
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      <button type="button" aria-expanded={expanded} onClick={onToggle} className="rounded-full bg-[var(--product-accent)] px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-[var(--product-accent-deep)]">
+        {expanded ? '접기' : `더보기 (${loaded - shown}개)`}
+      </button>
+      {expanded && total > loaded && <span className="text-[12.5px] tabular-nums text-[var(--product-muted)]">{total}건 중 {loaded}건입니다. 낱말을 더 넣으면 좁혀집니다.</span>}
+    </div>
   );
 }
