@@ -72,3 +72,11 @@ Local real-profile playback: all 32/32 queries use Hybrid without BM25-only fall
 The runtime now validates 384/consistent document-and-query dimensions, finite numeric vectors, approximate unit norms, non-duplicated versions, consistent query hashes and sane input sizes before accepting an artifact. Any changed live company query hash continues to fall back to BM25 until its vector is regenerated. Never publish raw company profiles or vector data to GitHub.
 
 NO AWS write, no service deployment, no model promotion, no PR merge. Independent recommendation accuracy remains unproven.
+
+## Small, explicitly NON-independent task-excerpt quality screen
+
+Deterministically sample 25 out of 217 auto-selected task-source candidates (seed=1015), review the first ~230 text characters. 8 of these 25 were flagged as POSSIBLE_BOILERPLATE_DOMINANCE (proposal evaluation tables, generic contract, warranty, supplier qualification). This is a quick model-authored risk screen, NOT full-document review and NOT a measurement of the actual 217-source false-selection rate. Useful task detail may exist elsewhere in the selected source. Full private per-version audit is stored at ml-relevance-audit-private-20261013/prd_task_excerpt_quality_sample25.json. Do not use these 25 screened fragments as an independent test set.
+
+The new /ml-experimental route also appears under the actual main FastAPI OpenAPI schema, as does the preserved /ml route. A direct endpoint registration regression test was added. AWS production end-to-end request testing, live validity/title/document SHA matching against production RDS, and t3.small CPU/memory measurements remain NOT DONE. An additional AWS read-only freshness query was not permitted by the local execution safety check; no alternative access path was attempted.
+
+The experiment remains opt-in, disabled by default, with no AWS updates or PR merges.

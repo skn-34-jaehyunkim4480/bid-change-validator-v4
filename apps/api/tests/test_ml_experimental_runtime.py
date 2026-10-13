@@ -213,3 +213,11 @@ def test_hybrid_with_golden_query_sha_is_exact_not_similarity_match(tmp_path):
     assert hit["mode_used"] == "hybrid_rrf"
     assert miss["mode_used"] == "bm25"
     assert miss["fallback_reason"] == "NO_EXACT_CACHED_QUERY_VECTOR"
+
+
+def test_experimental_route_registered_with_main_app():
+    from app.main import app
+    api = app.openapi()
+    assert "/api/v1/recommendations/ml" in api["paths"]
+    assert "/api/v1/recommendations/ml-experimental" in api["paths"]
+    assert "post" in api["paths"]["/api/v1/recommendations/ml-experimental"]
