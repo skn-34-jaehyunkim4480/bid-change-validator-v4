@@ -255,61 +255,65 @@ test('server errors show an actionable retry instead of false success', async ({
   await expect(page.getByText('일시적으로 공고를 조회할 수 없습니다.')).toBeVisible();
   await expect(page.getByRole('button', { name: /다시 시도/ })).toBeEnabled();
 });
-test('ML POST contract distinguishes learned rank from qualification (MOCK)', async ({ page }) => {
+test('primary BM25 recommendations load automatically, hide legacy fallback, group duplicates and page results', async ({ page }) => {
   await mockApi(page);
-  await page.route('**/api/v1/companies', route => route.fulfill({
-    status: 200, json: [{ id: 'company-a', name: '로컬 테스트 회사' }],
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j20', name: '합성회사 J20' }],
   }));
-  await page.route('**/api/v1/recommendations/ml', route => {
-    expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toMatchObject({ company_id: 'company-a', limit: 50 });
+  let legacyCalls = 0;
+  await page.route('**/api/v1/recommendations/ml', (route) => {
+    legacyCalls++;
+    return route.fulfill({ status: 200, json: { items: [], needs_review_items: [] } });
+  });
+  const item = (number: number, title = '행사 운영 ' + number) => ({
+    notice_id: 'notice-' + number, title, rank: number, relevance_score: 30 - number,
+    reason: 'Model-generated text similarity; no directly matching keyword identified',
+    version_number: 1, analysis_run_id: null, analysis_version: null, analysis_status: 'UNKNOWN',
+    qualification_state: 'UNKNOWN', qualification_reason: 'No successful current-version analysis',
+    rule_version: null, is_stale: false, deadline_source: 'explicit', effective_deadline: null,
+  });
+  const rows = [...Array.from({ length: 12 }, (_, i) => item(i + 1)), item(13, '행사 운영 1')];
+  let actualSearchCalls = 0;
+  await page.route('**/api/v1/recommendations/ml-experimental', (route) => {
+    actualSearchCalls++;
+    expect(route.request().postDataJSON()).toMatchObject({
+      company_id: 'company-j20', limit: 50, mode: 'bm25', query_strategy: 'industry_v1',
+    });
     return route.fulfill({ status: 200, json: {
-      model_version: 'mock-model-v1', dataset_version: 'mock-dataset',
-      scoring_source: 'local_lightgbm', input_sha256: null, fallback_reason: null,
-      fallback_used: false, total_valid_candidates: 2,
-      note: 'Ranking is not a probability', items: [{
-        notice_id: 'notice-a', title: '로컬 E2E 공고', rank: 1, relevance_score: 0.88,
-        reason: 'Text relevance', version_number: 1, analysis_run_id: null,
-        analysis_version: null, analysis_status: 'SUCCEEDED', qualification_state: 'core_met',
-        qualification_reason: 'Verified', rule_version: 'test', is_stale: false,
-        deadline_source: 'explicit', effective_deadline: '2026-10-10T00:00:00Z',
-      }], needs_review_items: [{
-        notice_id: 'notice-b', title: '추가 확인 공고', rank: 1, relevance_score: 0.76,
-        reason: 'Text relevance', version_number: 1, analysis_run_id: null,
-        analysis_version: null, analysis_status: 'UNKNOWN', qualification_state: 'needs_review',
-        qualification_reason: 'Insufficient evidence', rule_version: null, is_stale: false,
-        deadline_source: 'assumed_40_days', effective_deadline: '2026-10-20T00:00:00Z',
-      }],
+      experiment: 'offline_task_corpus_v1', query_strategy_used: 'industry_v1',
+      mode_requested: 'bm25', mode_used: 'bm25', fallback_used: true,
+      fallback_reason: 'UNINDEXED_LIVE_TITLE_FALLBACK',
+      valid_live_candidates: 3589, indexed_live_candidates: 344,
+      live_title_fallback_candidates: 3245, stale_source_documents: 0,
+      retrieval_latency_ms: 31, task_source_status: 'UNVERIFIED_NO_INDEPENDENT_ACCURACY',
+      note: 'Not independently validated', items: [], needs_review_items: rows,
     } });
   });
   await page.goto('/recommendations');
-  await expect(page.getByText('MOCK · 실제 모델 결과 아님')).toBeVisible();
-  await expect(page.getByText('학습 모델 기반 연관성 순위')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('0.880')).toBeVisible();
-  await expect(page.getByText('핵심 요건 충족')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '확인 필요 공고' })).toBeVisible();
-  await expect(page.getByText('추가 확인 공고')).toBeVisible();
-  await expect(page.getByRole('link', { name: /공고 상세·첨부 원문/ }))
-    .toHaveAttribute('href', '/notices/notice-a');
-  await expect(page.getByText('88%')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.getByText('행사 운영 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('행사 운영 11', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('동일 제목의 다른 공고 1건', { exact: false })).toBeVisible();
+  await expect(page.getByText('Model-generated text similarity', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('model_not_configured')).toHaveCount(0);
+  expect(legacyCalls).toBe(0);
+  expect(actualSearchCalls).toBe(1);
+  await page.getByRole('button', { name: /더 보기/ }).click();
+  await expect(page.getByText('행사 운영 11', { exact: true })).toBeVisible();
 });
 
-test('lexical fallback never claims a trained model (MOCK)', async ({ page }) => {
+test('primary recommendations fail closed without showing legacy pseudo-recommendations', async ({ page }) => {
   await mockApi(page);
-  await page.route('**/api/v1/companies', route => route.fulfill({
-    status: 200, json: [{ id: 'company-a', name: '로컬 회사' }],
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j20', name: '합성회사 J20' }],
   }));
-  await page.route('**/api/v1/recommendations/ml', route => route.fulfill({
-    status: 200, json: {
-      model_version: null, dataset_version: null, scoring_source: 'lexical_fallback',
-      input_sha256: null, fallback_reason: 'model_not_configured',
-      fallback_used: true, total_valid_candidates: 0,
-      note: 'Not a trained model', items: [], needs_review_items: [],
-    },
+  await page.route('**/api/v1/recommendations/ml-experimental', (route) => route.fulfill({
+    status: 503, json: { detail: 'Artifacts not configured' },
   }));
   await page.goto('/recommendations');
-  await expect(page.getByText('학습 모델 미적용 — 키워드 기반 대체 순위')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('검증된 핵심 요건 충족 추천 결과가 없습니다. 확인 필요 공고는 아래에 별도로 표시합니다.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="ml-experiment-heading"]').getByRole('alert')).toContainText('서버에서 비활성');
+  await expect(page.getByText('학습 모델 미적용')).toHaveCount(0);
 });
 
 test('admin view denies non-admin and does not invoke mutations (MOCK)', async ({ page }) => {
