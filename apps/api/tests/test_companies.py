@@ -192,3 +192,53 @@ def test_health_check_uses_database() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_account_without_a_company_creates_its_own_profile_once() -> None:
+    """회사가 없는 계정은 자기 회사 프로필을 한 번 만들고 그 회사의 관리자가 된다(2026-10-13)."""
+    from apps.api.app.auth import get_optional_current_user, hash_password
+    from apps.api.app.auth_models import AppUser
+    from apps.api.app.database import SessionLocal
+    from apps.api.app.models import Company
+
+    payload = {
+        "name": "직접 만든 회사", "business_registration_number": _business_number(), "region_code": "11",
+        "region_name": "서울특별시", "company_size": "SMALL", "industry_codes": ["0001"],
+        "staff": {"total_count": 3, "verified": False, "roles": []},
+    }
+    db = SessionLocal()
+    user = AppUser(username=f"founder-{uuid4().hex[:10]}", password_hash=hash_password("demo-pass-1234"), role="USER", active=True)
+    db.add(user)
+    db.commit()
+    user_id = user.id
+    db.close()
+    company_id = None
+    try:
+        login = client.post("/api/v1/auth/login", json={"username": user.username, "password": "demo-pass-1234"})
+        assert login.status_code == 200, login.text
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.get("/api/v1/companies", headers=headers).json() == []
+
+        created = client.post("/api/v1/companies", json=payload, headers=headers)
+        assert created.status_code == 201, created.text
+        company_id = created.json()["id"]
+        me = client.get("/api/v1/auth/me", headers=headers).json()
+        assert me["company_id"] == company_id and me["role"] == "ADMIN"
+        assert [row["id"] for row in client.get("/api/v1/companies", headers=headers).json()] == [company_id]
+
+        # 이미 회사가 있는 계정은 회사를 더 만들 수 없다.
+        again = client.post("/api/v1/companies", json={**payload, "business_registration_number": _business_number()}, headers=headers)
+        assert again.status_code == 403 and again.json()["error"]["code"] == "COMPANY_CREATION_FORBIDDEN"
+    finally:
+        client.cookies.clear()
+        db = SessionLocal()
+        found = db.get(AppUser, user_id)
+        if found is not None:
+            db.delete(found)
+            db.commit()
+        if company_id is not None:
+            company = db.get(Company, company_id)
+            if company is not None:
+                db.delete(company)
+                db.commit()
+        db.close()

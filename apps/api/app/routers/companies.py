@@ -223,7 +223,10 @@ def create_company(
     db: Session = Depends(get_db),
     user: AppUser | None = Depends(get_optional_current_user),
 ) -> CompanyRead:
-    if user is not None and user.role != "SYSTEM_ADMIN":
+    # 회사가 아직 없는 계정은 자기 회사 프로필을 한 번 만들 수 있다. 만들면 그 회사의 관리자가 된다(2026-10-13).
+    # 이미 회사가 있는 계정은 회사를 더 만들 수 없다.
+    founding = user is not None and user.role != "SYSTEM_ADMIN" and user.company_id is None
+    if user is not None and user.role != "SYSTEM_ADMIN" and not founding:
         raise ApiError(403, "COMPANY_CREATION_FORBIDDEN", "회사 생성 권한이 없습니다.")
     industries = _validate_industry_codes(db, payload.industry_codes)
     company = Company(
@@ -257,6 +260,9 @@ def create_company(
         )
         for role in payload.staff.roles
     ]
+    if founding:
+        user.company_id = company.id
+        user.role = "ADMIN"
     _commit(db, "이미 등록된 사업자등록번호입니다.")
     return _company_response(_load_company(db, company.id))
 

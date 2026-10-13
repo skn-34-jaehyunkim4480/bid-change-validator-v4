@@ -32,7 +32,8 @@ class AuthUserRead(BaseModel):
 class AuthUserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=256)
-    company_id: UUID
+    # 비워 두면 회사가 없는 계정이다. 그 계정이 처음 로그인해 회사 프로필을 직접 만든다(시스템 관리자만 비울 수 있다).
+    company_id: UUID | None = None
     role: Literal["ADMIN", "USER"] = "USER"
 
     @field_validator("username")
