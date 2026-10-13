@@ -135,3 +135,52 @@ def test_golden_bundle_in_the_repo_has_the_evidence_the_seed_needs() -> None:
     bundle_dir = Path(__file__).resolve().parents[3] / "eval" / "golden" / "qualification-v0.2"
     cases, evidence = load_golden_bundle(bundle_dir)
     assert len(cases) == 32 and len(evidence) >= 64
+
+
+def test_seed_attaches_evidence_excerpt_documents_so_judgments_are_grounded() -> None:
+    """골든 근거 문장으로 「근거 발췌」 문서를 붙인다. 문서가 없으면 판정이 근거를 확인하지 못해 전부 확인 필요가 된다."""
+    from datetime import datetime, timezone
+
+    from apps.api.app.database import SessionLocal
+    from apps.api.app.models import BidNotice, NoticeDocument
+    from apps.api.app.scripts.seed_golden_v02_accounts import EXCERPT_EXTRACTOR, _ensure_evidence_documents
+
+    db = SessionLocal()
+    now = datetime.now(timezone.utc)
+    notice = BidNotice(bid_notice_no=f"R26GD{uuid4().hex[:8].upper()}", title="골든 문서 확인", business_type="SERVICE", first_seen_at=now, last_seen_at=now)
+    db.add(notice)
+    db.flush()
+    version = BidNoticeVersion(notice_id=notice.id, version_number=1, bid_notice_order="000", is_current=True,
+                               payload_hash=uuid4().hex, raw_json={}, collected_at=now, source_endpoint="golden-v0.2")
+    db.add(version)
+    db.flush()
+    excerpt_id, real_id = str(uuid4()), str(uuid4())
+    real = NoticeDocument(id=real_id, notice_version_id=version.id, document_order=1, name="진짜 공고문.pdf", url="https://example.test/a",
+                          source_field="stdNtceDocUrl", download_status="DOWNLOADED", storage_key="k", file_sha256="f" * 64,
+                          extraction_status="EXTRACTED", extracted_text="진짜 본문", extracted_blocks=[{"block_index": 0, "text": "진짜 본문"}],
+                          extracted_text_sha256="e" * 64, text_extractor="PYPDF")
+    db.add(real)
+    db.flush()
+    try:
+        items = [
+            {"evidence_id": "E002", "document_id": excerpt_id, "quote": "본사가 서울특별시에 있는 업체", "location": "공고문 p.2"},
+            {"evidence_id": "E001", "document_id": excerpt_id, "quote": "소프트웨어사업자(업종코드 1468)", "location": "공고문 p.1"},
+            {"evidence_id": "E003", "document_id": real_id, "quote": "진짜 본문", "location": "p.1"},
+        ]
+        hashes = _ensure_evidence_documents(db, version=version, items=items,
+                                            documents={excerpt_id: {"document_name": "입찰공고문.hwp", "source_url": "https://example.test/b"}})
+        made = db.get(NoticeDocument, excerpt_id)
+        assert made.name == "[골든셋 근거 발췌] 입찰공고문.hwp" and made.text_extractor == EXCERPT_EXTRACTOR
+        assert [block["text"] for block in made.extracted_blocks] == ["소프트웨어사업자(업종코드 1468)", "본사가 서울특별시에 있는 업체"]
+        assert made.extraction_status == "EXTRACTED" and made.download_status == "FAILED" and made.storage_key is None   # 원본 파일은 없다
+        assert hashes[excerpt_id] == (made.file_sha256, made.extracted_text_sha256) and made.file_sha256
+        # 이미 수집된 진짜 문서는 건드리지 않고 그 해시를 쓴다.
+        db.refresh(real)
+        assert (real.name, real.extracted_text, real.download_status) == ("진짜 공고문.pdf", "진짜 본문", "DOWNLOADED")
+        assert hashes[real_id] == ("f" * 64, "e" * 64)
+        # 다시 넣어도 발췌 문서는 하나다.
+        _ensure_evidence_documents(db, version=version, items=items, documents={})
+        assert db.query(NoticeDocument).filter(NoticeDocument.notice_version_id == version.id).count() == 2
+    finally:
+        db.rollback()
+        db.close()

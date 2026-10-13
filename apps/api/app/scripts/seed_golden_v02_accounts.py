@@ -49,6 +49,7 @@ from ..models import (
     CompanyStaff,
     CompanyStaffRole,
     IndustryCode,
+    NoticeDocument,
     PreflightCase,
 )
 from ..qualification.analysis import qualification_analysis_version_fingerprint
@@ -71,6 +72,79 @@ def golden_username(case_id: str) -> str:
 
 def golden_business_number(case_id: str) -> str:
     return f"9902{int(case_id[1:]):06d}"
+
+
+EXCERPT_NAME_PREFIX = "[골든셋 근거 발췌] "
+EXCERPT_EXTRACTOR = "GOLDEN_EVIDENCE_EXCERPT"
+
+
+def load_golden_documents(bundle_dir: Path) -> dict[str, dict[str, Any]]:
+    """근거가 나온 원래 문서의 이름·주소(sources/sources24.json). 없으면 빈 것 — 문서 이름만 덜 친절해진다."""
+    path = bundle_dir / "sources" / "sources24.json"
+    if not path.is_file():
+        return {}
+    return {item["document_id"]: item for item in json.loads(path.read_text(encoding="utf-8"))}
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _ensure_evidence_documents(
+    db: Session,
+    *,
+    version: BidNoticeVersion,
+    items: list[dict[str, Any]],
+    documents: dict[str, dict[str, Any]],
+) -> dict[str, tuple[str | None, str | None]]:
+    """골든 근거가 가리키는 문서를 이 차수에 붙인다. 돌려주는 것은 문서 id → (파일 해시, 추출문 해시).
+
+    판정은 요건마다 "인용한 문장이 저장된 공고문에 있는가"를 먼저 확인하고, 없으면 회사 프로필과 비교하지 않는다
+    (qualification/impact_adapter.current_grounded_requirement_keys). 골든셋에는 원본 첨부가 없고 발췌한 근거 문장만
+    있으므로, 그 문장들을 모은 「근거 발췌」 문서를 만든다. 원본 파일이 아니라는 것을 이름·추출기 이름·내려받기 상태로 남긴다.
+    그 id 의 문서가 이미 있으면(진짜로 수집된 문서) 건드리지 않고 그 해시를 쓴다.
+    """
+    hashes: dict[str, tuple[str | None, str | None]] = {}
+    by_document: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        by_document.setdefault(item["document_id"], []).append(item)
+    now = datetime.now(timezone.utc)
+    for order, (document_id, quotes) in enumerate(sorted(by_document.items()), start=1):
+        existing = db.get(NoticeDocument, UUID(document_id))
+        if existing is not None and existing.text_extractor != EXCERPT_EXTRACTOR:
+            hashes[document_id] = (existing.file_sha256, existing.extracted_text_sha256)
+            continue
+        meta = documents.get(document_id, {})
+        blocks = [
+            {"block_index": index, "location": item.get("location") or "", "text": item["quote"]}
+            for index, item in enumerate(sorted(quotes, key=lambda row: row["evidence_id"]))
+        ]
+        text = "\n\n".join(block["text"] for block in blocks)
+        digest = _sha256(text)
+        document = existing or NoticeDocument(id=UUID(document_id), notice_version_id=version.id)
+        document.notice_version_id = version.id
+        document.document_order = 900 + order
+        document.name = EXCERPT_NAME_PREFIX + str(meta.get("document_name") or f"공고문 {document_id[:8]}")
+        document.url = str(meta.get("source_url") or quotes[0].get("source_url") or "")
+        document.source_field = f"golden-v0.2:{document_id}"
+        # 원본 파일은 없다. 내려받기 실패로 두어 원본 열기·재추출 대상에서 빠지게 한다.
+        document.download_status = "FAILED"
+        document.download_error = "골든셋 근거 발췌문입니다. 원본 첨부 파일은 저장돼 있지 않습니다."
+        document.storage_key = None
+        document.content_type = "text/plain"
+        document.file_size_bytes = len(text.encode("utf-8"))
+        document.file_sha256 = digest
+        document.extraction_status = "EXTRACTED"
+        document.extracted_text = text
+        document.extracted_blocks = blocks
+        document.extracted_char_count = len(text)
+        document.extracted_text_sha256 = digest
+        document.text_extractor = EXCERPT_EXTRACTOR
+        document.extracted_at = now
+        db.add(document)
+        hashes[document_id] = (digest, digest)
+    db.flush()
+    return hashes
 
 
 def synthetic_industry_code(case_id: str, index: int) -> str:
@@ -326,6 +400,7 @@ def _replace_analysis(
     case: dict[str, Any],
     version: BidNoticeVersion,
     evidence: dict[str, dict[str, Any]],
+    documents: dict[str, dict[str, Any]] | None = None,
 ) -> QualificationAnalysisRun:
     existing = db.scalar(
         select(QualificationAnalysisRun).where(
@@ -383,10 +458,19 @@ def _replace_analysis(
         )
         used_evidence.update(requirement.get("evidence_keys", []))
 
+    missing = sorted(key for key in used_evidence if key not in evidence)
+    if missing:
+        raise ValueError(f"missing evidence {missing[0]} for {case['case_id']}")
+    # 근거가 가리키는 문서를 차수에 붙이고, 근거에 그 문서의 해시를 적는다 — 둘이 맞아야 판정이 근거를 인정한다.
+    hashes = _ensure_evidence_documents(
+        db, version=version, items=[evidence[key] for key in sorted(used_evidence)], documents=documents or {},
+    )
+    # 지문은 차수의 문서까지 넣어 만든다. 문서를 붙인 뒤에 다시 계산하지 않으면 "문서가 바뀌어 다시 분석해야 한다" 로 읽힌다.
+    db.expire(version, ["documents"])
+    run.input_fingerprint = qualification_analysis_version_fingerprint(version)
     for evidence_key in sorted(used_evidence):
-        item = evidence.get(evidence_key)
-        if item is None:
-            raise ValueError(f"missing evidence {evidence_key} for {case['case_id']}")
+        item = evidence[evidence_key]
+        source_sha256, text_sha256 = hashes.get(item["document_id"], (None, None))
         db.add(
             QualificationEvidenceRecord(
                 analysis_run_id=run.id,
@@ -398,8 +482,8 @@ def _replace_analysis(
                 chunk_id=evidence_key,
                 location={"display": item.get("location")},
                 quote=item["quote"],
-                source_sha256=None,
-                extracted_text_sha256=None,
+                source_sha256=source_sha256,
+                extracted_text_sha256=text_sha256,
             )
         )
     return run
@@ -442,6 +526,7 @@ def seed_golden_v02_accounts(
         raise ValueError("--create-missing-notices requires --include-analysis")
 
     cases, evidence = load_golden_bundle(bundle_dir)
+    documents = load_golden_documents(bundle_dir)
     versions: dict[UUID, tuple[BidNoticeVersion, QualificationAnalysisRun | None]] = {}
     seeded_cases: list[dict[str, str]] = []
     missing_versions: list[dict[str, str]] = []
@@ -464,7 +549,7 @@ def seed_golden_v02_accounts(
             if include_analysis:
                 cached = versions.get(version.id)
                 if cached is None:
-                    analysis = _replace_analysis(db, case=case, version=version, evidence=evidence)
+                    analysis = _replace_analysis(db, case=case, version=version, evidence=evidence, documents=documents)
                     versions[version.id] = (version, analysis)
                 else:
                     analysis = cached[1]
