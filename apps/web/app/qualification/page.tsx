@@ -9,6 +9,7 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { openMembershipIfRequired } from '@/lib/membership';
 import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
@@ -563,6 +564,11 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       if (cause instanceof AnalysisApprovalPending) {
         setMessageTone('warn');
         setMessage(cause.message);
+        setError('');
+      } else if (openMembershipIfRequired(cause, 'NOTICE_CHECK')) {
+        // 요금제 한도를 넘었다 — 멤버십 창이 뜬다. 화면에는 같은 안내를 경고로 남긴다.
+        setMessageTone('warn');
+        setMessage(cause instanceof Error ? cause.message : '멤버십이 필요합니다.');
         setError('');
       } else {
         setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');

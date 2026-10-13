@@ -11,6 +11,7 @@ import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
+import { MEMBERSHIP_REQUIRED, membershipModal } from '@/lib/membership';
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
@@ -260,6 +261,10 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
     if (readsDocuments(job.job_id)) ask(`${job.label}: ${item.label}`, undefined, undefined, true);
     else ask(item.label, undefined, { jobId: job.job_id, questionId: item.question_id });
   };
+  // 요금제 한도를 넘어 막힌 질문이면 멤버십 창을 띄운다. 같은 실패에 한 번만 뜨도록 대화의 순번에 맞춘다.
+  useEffect(() => {
+    if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open('COPILOT_QUESTION');
+  }, [state.errorCode, state.revision]);
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>

@@ -11,6 +11,7 @@ from ..auth_models import AppUser
 from ..ask_back_schemas import QualificationAnswerRead
 from ..database import get_db
 from ..errors import ApiError
+from ..membership import consume_copilot_question
 from ..qualification.judgment import QualificationJudgmentError
 from ..revalidation_schemas import QualificationRevalidationRead
 from .actions import confirm_action
@@ -178,7 +179,13 @@ def copilot_chat(
     if guided is not None:
         ensure_question_available(case, guided)
         payload = payload.model_copy(update={"message": guided.label})
-    if is_free_chat(payload, guided, semantic_processing):
+    free = is_free_chat(payload, guided, semantic_processing)
+    # 요금제 한도: AI 가 답하는 질문만 센다(입력창 질문과 추천 질문). 사용 전 안내를 확인하지 않은 요청은 모델을
+    # 부르지 않으므로 세지 않고, '근거 보기' 같은 단추와 답변 입력·실행 요청도 세지 않는다.
+    if semantic_processing and payload.user_input is None and (free or guided is not None):
+        consume_copilot_question(db, user, case.id)
+        db.commit()
+    if free:
         return free_chat_response(db, payload, case, semantic_processing)
     if payload.response_version == '3.1':
         from .orchestration import chat_v31

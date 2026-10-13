@@ -15,6 +15,7 @@ from ...auth_models import AppUser
 from ...database import get_db
 from ...config import get_settings
 from ...errors import ApiError
+from ...membership import ensure_notice_check_allowed
 from ...models import BidNoticeVersion, NoticeProcessingAttempt, NoticeProcessingJob
 from ...services.notice_processing import claim_approved_analysis_job, enqueue_version_job, finish_job
 from ...services.participation_limits import participation_limits_fetcher
@@ -96,6 +97,8 @@ def trigger_qualification_analysis(
     ))
     if version is None:
         raise ApiError(404, "NOTICE_VERSION_NOT_FOUND", "공고 차수를 찾을 수 없습니다.")
+    # 요금제 한도: 이번 달에 처음 확인하는 공고인데 한도를 다 썼으면 분석부터 막는다. 세는 것은 판정을 실행할 때다.
+    ensure_notice_check_allowed(db, user, notice_id)
     settings = get_settings()
     self_service = settings.qualification_self_service_enabled
     if self_service:

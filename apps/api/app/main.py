@@ -24,6 +24,7 @@ from .routers.admin_relevance_labels import router as admin_relevance_labels_rou
 from .routers.admin_processing_jobs import router as admin_processing_jobs_router
 from .routers.clause_reviews import router as clause_reviews_router
 from .routers.master_codes import router as master_codes_router
+from .routers.membership import router as membership_router
 from .routers.notices import router as notices_router
 from .routers.preflight_cases import router as preflight_cases_router
 
@@ -92,6 +93,7 @@ protected_api_router.include_router(qualification_revalidation_router)
 protected_api_router.include_router(qualification_matching_router)
 protected_api_router.include_router(ml_recommendations_router)
 protected_api_router.include_router(copilot_router)
+protected_api_router.include_router(membership_router)
 protected_api_router.include_router(admin_jobs_router)
 protected_api_router.include_router(admin_relevance_labels_router)
 protected_api_router.include_router(admin_processing_jobs_router)

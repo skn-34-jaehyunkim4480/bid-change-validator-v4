@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { AppUserProvider } from '@/components/app-user-context';
 import { CopilotProvider } from '@/components/copilot/provider';
 import { CopilotPanel } from '@/components/copilot/panel';
+import { MembershipModal } from '@/components/membership-modal';
 
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
@@ -288,6 +289,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div id="main-content" tabIndex={-1} className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
         <AppFooter />
         <CopilotPanel />
+        <MembershipModal />
       </div>
       </CopilotProvider>
     </AppUserProvider>
