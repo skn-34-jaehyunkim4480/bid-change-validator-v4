@@ -266,7 +266,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <AppUserProvider user={user}>
-      <CopilotProvider>
+      <CopilotProvider userId={user?.id ?? 'anonymous'}>
       <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
         <AppHeader pathname={pathname} user={user} onLogout={() => void handleLogout()} />
         {logoutFailure && (

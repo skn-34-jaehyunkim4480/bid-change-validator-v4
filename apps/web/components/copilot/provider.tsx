@@ -6,10 +6,14 @@ import { ConversationStore } from '@/lib/copilot-conversation';
 import { ActionController } from '@/lib/copilot-actions';
 import { saveCopilotNavigationHandoff, takeCopilotNavigationHandoff } from '@/lib/copilot-navigation-handoff';
 
-const CONVERSATIONS_KEY = 'bidcheck.copilot.conversations.v1';
+// 대화 기록은 계정마다 따로 남긴다(2026-10-13). 예전에는 열쇠 하나를 브라우저의 모든 계정이 같이 써서,
+// 다른 계정으로 로그인해도 앞 계정의 일반 도우미·공고 대화가 그대로 보였다.
+const LEGACY_SHARED_KEY = 'bidcheck.copilot.conversations.v1';
+const conversationsKey = (userId: string) => `bidcheck.copilot.conversations.v2:${userId}`;
 
 const Context = createContext<{ store: ConversationStore; controller: ActionController } | null>(null);
-export function CopilotProvider({ children }: { children: ReactNode }) {
+/** userId 는 로그인한 계정의 id 다. 로그인 없이 쓰는 개발 환경과 로그인 화면에서는 'anonymous' 를 준다. */
+export function CopilotProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const [value] = useState(() => {
     const store = new ConversationStore();
     return { store, controller: new ActionController(undefined, undefined, (id, response) => store.publish(id, response)) };
@@ -17,17 +21,27 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   // 공고별 대화 기록을 이 브라우저에 남긴다. 새로고침해도 전용 화면의 대화 목록이 유지된다.
   useEffect(() => {
     const { store } = value;
-    try { store.hydrate(JSON.parse(window.localStorage.getItem(CONVERSATIONS_KEY) ?? 'null')); } catch { /* 깨진 값·저장소 차단 — 빈 목록으로 시작 */ }
+    // 계정이 바뀌면 앞 계정의 대화를 화면에서 비우고, 이 계정의 기록만 읽는다.
+    store.reset();
+    try { window.localStorage.removeItem(LEGACY_SHARED_KEY); } catch { /* 저장소 차단 */ }
+    const key = conversationsKey(userId);
+    try { store.hydrate(JSON.parse(window.localStorage.getItem(key) ?? 'null')); } catch { /* 깨진 값·저장소 차단 — 빈 목록으로 시작 */ }
     let timer: number | undefined;
+    const write = () => {
+      timer = undefined;
+      try { window.localStorage.setItem(key, JSON.stringify(store.serialize())); } catch { /* 용량 초과·저장소 차단 — 이번 방문에만 유지 */ }
+    };
     const save = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        try { window.localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(store.serialize())); } catch { /* 용량 초과·저장소 차단 — 이번 방문에만 유지 */ }
-      }, 300);
+      timer = window.setTimeout(write, 300);
     };
     const unsubscribe = store.subscribe(save);
-    return () => { unsubscribe(); window.clearTimeout(timer); };
-  }, [value]);
+    return () => {
+      unsubscribe();
+      // 계정이 바뀌기 직전에 남기려던 것이 있으면 이 계정의 열쇠에 마저 쓴다.
+      if (timer !== undefined) { window.clearTimeout(timer); write(); }
+    };
+  }, [value, userId]);
   useEffect(() => {
     const handoff = takeCopilotNavigationHandoff();
     if (!handoff) return;

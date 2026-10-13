@@ -166,6 +166,12 @@ export class ConversationStore {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
     this.listeners.forEach(fn => fn());
   }
+  /** 모든 대화를 비운다. 계정이 바뀔 때 앞 계정의 대화가 화면에 남지 않게 한다. */
+  reset() {
+    this.states.clear();
+    this.failed.clear();
+    this.listeners.forEach(fn => fn());
+  }
   /** 대화가 있는 검토 건의 id. 대화 목록(전용 화면의 왼쪽)이 쓴다. */
   caseIds(): string[] {
     return [...this.states.entries()].filter(([, state]) => state.turns.length > 0).map(([caseId]) => caseId);
