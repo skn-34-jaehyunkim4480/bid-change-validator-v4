@@ -312,6 +312,11 @@ export function lookupProcurementCompany(businessRegistrationNumber: string) {
   return request<ProcurementCompany>(`/api/v1/companies/procurement-lookup?${search}`, undefined, false);
 }
 
+/** 수행 실적·인증·인력·사업자등록번호를 비운다. 회사명·업종·소재지·기업 구분은 남는다. */
+export function resetCompanyProfile(companyId: string) {
+  return request<CompanyProfile>(`/api/v1/companies/${companyId}/reset`, { method: 'POST' });
+}
+
 export function updateCompany(companyId: string, payload: Partial<CompanyCreatePayload>) {
   return request<CompanyProfile>(`/api/v1/companies/${companyId}`, {
     method: 'PATCH',

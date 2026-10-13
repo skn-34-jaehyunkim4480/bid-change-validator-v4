@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   X,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import { COMPANY_SIZE_LABEL, OVERALL_STATUS_BADGE, REQUIREMENT_TYPE_LABEL, label
 import {
   createCompany,
   listCompanies,
+  resetCompanyProfile,
   searchIndustryCodes,
   updateCompany,
   type CompanyCreatePayload,
@@ -139,7 +141,8 @@ export default function CompanyPage() {
   // 조달청 조회로 받은 사업자등록번호(회사에 번호가 없을 때만). 저장할 때 함께 넣는다.
   const [numberDraft, setNumberDraft] = useState<string | null>(null);
   // 저장 뒤에 방금까지 보던 공고를 다시 판정한 결과.
-  const [saved, setSaved] = useState<{ rejudged: Rejudged | null } | null>(null);
+  const [saved, setSaved] = useState<{ rejudged: Rejudged | null; reset?: boolean } | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [form, setForm] = useState({
     name: '',
     business_registration_number: '',
@@ -147,7 +150,6 @@ export default function CompanyPage() {
     region_name: '서울특별시',
     company_size: 'SMALL' as CompanySize,
     staff_total: '8',
-    developer_count: '5',
   });
 
   // 회사를 처음 만들 때 조달청에서 불러온 업종. 있으면 아래에서 고른 업종 대신 이 목록으로 만든다.
@@ -288,6 +290,25 @@ export default function CompanyPage() {
     }
   }
 
+  /** 프로필 초기화: 수행 실적·인증·인력·사업자등록번호를 비운다. 끝나면 보던 공고를 다시 판정한다(저장과 같다). */
+  async function resetProfile() {
+    if (!company || busy !== null) return;
+    setBusy('save');
+    setError('');
+    setSaved(null);
+    setConfirmReset(false);
+    try {
+      await resetCompanyProfile(company.id);
+      setCompanies(await listCompanies());
+      discardAll();
+      setSaved({ rejudged: await rejudgeLastCase(company.id), reset: true });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '프로필을 초기화하지 못했습니다.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** 조달청 조회 결과를 초안에 담는다. 업종은 더하기만 하고, 소재지는 조회한 시·도로 바꾼다. 저장은 「변경 사항 저장」으로 한다. */
   function applyProcurement(found: ProcurementCompany) {
     if (!company || !savedBasics) return '';
@@ -387,13 +408,8 @@ export default function CompanyPage() {
         staff: {
           total_count: Number(form.staff_total || 0),
           verified: false,
-          roles: [
-            {
-              role_name: '개발자',
-              headcount: Number(form.developer_count || 0),
-              verified: false,
-            },
-          ],
+          // 역할별 인원은 처음에 받지 않는다. 비워 두면 역할을 요구하는 공고는 「확인 필요」로 남는다.
+          roles: [],
         },
       };
       const created = await createCompany(payload);
@@ -454,7 +470,6 @@ export default function CompanyPage() {
                 </label>
                 <label className="text-sm font-medium" htmlFor="company-region-code">지역 코드 (자동)<Input id="company-region-code" className="mt-2 bg-[var(--product-tint)]" value={form.region_code} readOnly /></label>
                 <label className="text-sm font-medium" htmlFor="company-staff-total">전체 인원<Input id="company-staff-total" className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
-                <label className="text-sm font-medium" htmlFor="company-developer-count">개발자 인원<Input id="company-developer-count" className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
               </div>
 
               <div className="mt-6">
@@ -508,9 +523,22 @@ export default function CompanyPage() {
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{company.name}</Badge>
                   <Button variant="outline" size="sm" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} />새로고침</Button>
+                  <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)} disabled={busy !== null}><RotateCcw />프로필 초기화</Button>
                 </div>
               </div>
             </section>
+
+            {/* 초기화는 되돌릴 수 없어 한 번 더 확인한다. 회사 관리자가 아닌 계정은 서버가 거절한다. */}
+            {confirmReset && (
+              <div role="alertdialog" aria-label="프로필 초기화 확인" className="mt-5 rounded-[18px] border border-rose-200 bg-rose-50 px-6 py-5">
+                <p className="text-[15px] font-bold text-rose-900">프로필을 초기화할까요?</p>
+                <p className="mt-1 text-[14px] leading-[1.7] text-rose-800">수행 실적, 인증·등록, 인력(상시 근로자 수·역할), 사업자등록번호를 모두 지웁니다. 회사명·업종·소재지·기업 구분은 남습니다(없으면 판정할 수 없는 값입니다). 지운 값은 되돌릴 수 없습니다.</p>
+                <div className="mt-4 flex gap-2">
+                  <Button className="rounded-full bg-rose-600 text-white hover:bg-rose-700" onClick={() => void resetProfile()} disabled={busy !== null}>초기화</Button>
+                  <Button variant="outline" className="rounded-full" onClick={() => setConfirmReset(false)}>취소</Button>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5">
               <ProcurementLookup key={company.id} savedNumber={company.business_registration_number} disabled={busy !== null} onApply={applyProcurement}
@@ -690,7 +718,7 @@ export default function CompanyPage() {
         {company && saved && dirtyCount === 0 && (
           <output className="sticky bottom-4 z-20 mt-8 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-emerald-200 bg-emerald-50 px-5 py-3 text-[14px] text-emerald-900 shadow-[0_12px_36px_rgba(31,42,82,0.12)]">
             <span>
-              <strong>저장했습니다.</strong>{' '}
+              <strong>{saved.reset ? '프로필을 초기화했습니다.' : '저장했습니다.'}</strong>{' '}
               {saved.rejudged?.state === 'done' && <>보던 공고 「{saved.rejudged.title}」를 다시 판정했습니다 — <strong>{OVERALL_STATUS_BADGE[saved.rejudged.overall].label}</strong></>}
               {saved.rejudged?.state === 'failed' && <span className="text-amber-800">보던 공고 「{saved.rejudged.title}」는 다시 판정하지 못했습니다. {saved.rejudged.message}</span>}
             </span>
