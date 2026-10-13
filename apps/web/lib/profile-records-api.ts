@@ -29,6 +29,9 @@ export type PerformancePayload = {
 
 export type CertificationPayload = {
   name: string;
+  /** 공고가 번호로 요구하는 값(예: 직접생산확인의 세부품명번호 10자리). 판정에 쓰인다. */
+  certification_code?: string;
+  /** 증명서에 적힌 발급 번호. 기록용이고 판정에는 쓰이지 않는다. */
   certificate_number?: string;
   issuer_name?: string;
   issued_at?: string;

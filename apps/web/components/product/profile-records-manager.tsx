@@ -26,7 +26,7 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState('');
   const [performance, setPerformance] = useState({ name: '', client_name: '', amount: '', completed_at: '', fields: '' });
-  const [certification, setCertification] = useState({ name: '', certificate_number: '', issuer_name: '', issued_at: '', expires_at: '' });
+  const [certification, setCertification] = useState({ name: '', certification_code: '', certificate_number: '', issuer_name: '', issued_at: '', expires_at: '' });
 
   async function execute(key: string, action: () => Promise<unknown>) {
     setBusy(key);
@@ -67,13 +67,14 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
     await execute('certification:create', async () => {
       await createCertification(company.id, {
         name: certification.name.trim(),
+        certification_code: certification.certification_code.trim() || undefined,
         certificate_number: certification.certificate_number.trim() || undefined,
         issuer_name: certification.issuer_name.trim() || undefined,
         issued_at: certification.issued_at || undefined,
         expires_at: certification.expires_at || undefined,
         verified: false,
       });
-      setCertification({ name: '', certificate_number: '', issuer_name: '', issued_at: '', expires_at: '' });
+      setCertification({ name: '', certification_code: '', certificate_number: '', issuer_name: '', issued_at: '', expires_at: '' });
     });
   }
 
@@ -109,7 +110,9 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <Input placeholder="인증·등록명 *" value={certification.name} onChange={(e) => setCertification({ ...certification, name: e.target.value })} />
-          <Input placeholder="번호" value={certification.certificate_number} onChange={(e) => setCertification({ ...certification, certificate_number: e.target.value })} />
+          {/* 공고가 번호로 요구하는 자격(직접생산확인의 세부품명번호 등)은 이름이 아니라 이 번호로 판정한다. */}
+          <Input className="sm:col-span-2" inputMode="numeric" placeholder="품명번호·인증 코드 (공고가 번호로 요구할 때, 예: 8111189901)" aria-label="품명번호 또는 인증 코드" value={certification.certification_code} onChange={(e) => setCertification({ ...certification, certification_code: e.target.value })} />
+          <Input placeholder="증명서 번호" value={certification.certificate_number} onChange={(e) => setCertification({ ...certification, certificate_number: e.target.value })} />
           <Input placeholder="발급기관" value={certification.issuer_name} onChange={(e) => setCertification({ ...certification, issuer_name: e.target.value })} />
           <Input type="date" value={certification.issued_at} onChange={(e) => setCertification({ ...certification, issued_at: e.target.value })} />
           <label className="sm:col-span-2 text-[12px] text-[var(--product-muted)]" htmlFor="certification-expires-at">만료일<Input id="certification-expires-at" className="mt-1" type="date" value={certification.expires_at} onChange={(e) => setCertification({ ...certification, expires_at: e.target.value })} /></label>
@@ -117,7 +120,7 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
         <Button className="mt-3 rounded-full" onClick={() => void addCertification()} disabled={busy !== null}><Plus /> 인증·등록 추가</Button>
 
         <div className="mt-5 divide-y divide-[var(--product-line-2)]">
-          {company.certifications.map((item) => <div key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong className="block truncate text-[14px]">{item.name}</strong><p className="mt-1 text-[12px] text-[var(--product-muted)]">{item.issuer_name ?? '발급기관 미입력'}{item.expires_at ? ` · 만료 ${item.expires_at}` : ''}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" className="rounded-full" onClick={() => void execute(`c:verify:${item.id}`, () => updateCertification(company.id, item.id, { verified: !item.verified }))}><Pencil /> {item.verified ? '증빙 보유' : '증빙 표시'}</Button><Button size="sm" variant="outline" className="rounded-full" onClick={() => void execute(`c:delete:${item.id}`, () => deleteCertification(company.id, item.id))}><Trash2 /> 삭제</Button></div></div>)}
+          {company.certifications.map((item) => <div key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong className="block truncate text-[14px]">{item.name}</strong><p className="mt-1 text-[12px] text-[var(--product-muted)]">{item.certification_code ? `번호 ${item.certification_code} · ` : ''}{item.issuer_name ?? '발급기관 미입력'}{item.expires_at ? ` · 만료 ${item.expires_at}` : ''}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" className="rounded-full" onClick={() => void execute(`c:verify:${item.id}`, () => updateCertification(company.id, item.id, { verified: !item.verified }))}><Pencil /> {item.verified ? '증빙 보유' : '증빙 표시'}</Button><Button size="sm" variant="outline" className="rounded-full" onClick={() => void execute(`c:delete:${item.id}`, () => deleteCertification(company.id, item.id))}><Trash2 /> 삭제</Button></div></div>)}
           {!company.certifications.length && <p className="py-5 text-center text-[13px] text-[var(--product-muted)]">등록된 인증·등록 정보가 없습니다.</p>}
         </div>
       </div>

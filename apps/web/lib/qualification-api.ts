@@ -56,6 +56,8 @@ export type CompanyProfile = {
   certifications: Array<{
     id: string;
     name: string;
+    /** 공고가 번호로 요구하는 값(세부품명번호, 업종·면허 코드 등). 판정은 이 값을 요건의 번호와 비교한다. */
+    certification_code?: string | null;
     certificate_number: string | null;
     issuer_name: string | null;
     issued_at: string | null;
