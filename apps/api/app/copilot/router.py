@@ -24,6 +24,7 @@ from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
 from .job_catalog import GuidedJobCatalog, catalog_for_case, ensure_question_available, get_question
 from .narration import apply_product_narration
+from .notice_links import answer_with_links
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
@@ -165,6 +166,10 @@ def copilot_general_chat(
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
     user: AppUser | None = Depends(get_optional_current_user),
 ) -> CopilotChatResponse:
+    # 공고를 찾아 달라거나 AI 추천 공고를 판정해 달라는 요청은 모델 없이 답한다(횟수도 쓰지 않는다).
+    linked = answer_with_links(db, user, payload.message)
+    if linked is not None:
+        return CopilotChatResponse(answer=linked.answer, intent="UNKNOWN", notice_links=linked.links)
     # 요금제 한도: 모델을 부르는 질문만 센다. 사용 전 안내를 확인하지 않은 요청은 모델을 부르지 않는다.
     if semantic_processing:
         consume_general_question(db, user)

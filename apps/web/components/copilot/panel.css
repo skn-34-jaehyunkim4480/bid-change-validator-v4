@@ -150,3 +150,14 @@
 .copilot-page-item[data-expired]:hover{background:#dfe2e8}
 .copilot-page-item .copilot-expired{display:inline-block;color:#fff;font-size:11px;line-height:16px;overflow:visible;text-overflow:clip;vertical-align:1px}
 .copilot-page-chat .copilot-expired-note{width:100%;max-width:1060px;margin-inline:auto}
+/* 일반 도우미가 찾아 준 공고 목록. 공고마다 판정 화면으로 가는 단추가 오른쪽에 있다. */
+.copilot-notice-links{display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none}
+.copilot-notice-links li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--product-line);border-radius:14px;background:var(--product-surface)}
+.copilot-notice-link-text{display:grid;gap:2px;min-width:0}
+.copilot-notice-link-text strong{font-size:13px;font-weight:700;line-height:19px;color:var(--product-ink)}
+.copilot-notice-link-text span{font-size:12px;line-height:17px;color:var(--product-muted)}
+.copilot-notice-link-text .copilot-expired{margin-left:6px;font-style:normal;font-size:11px;padding:1px 6px}
+.copilot-notice-link-go{flex:none;display:inline-flex;align-items:center;gap:4px;min-height:34px;padding:0 12px;border-radius:999px;background:var(--product-accent-deep);color:#fff;font-size:12px;font-weight:700;white-space:nowrap}
+.copilot-notice-link-go:hover:not(:disabled){background:var(--product-accent)}
+.copilot-notice-link-go:disabled{opacity:.6}
+@media(max-width:480px){.copilot-notice-links li{flex-direction:column;align-items:flex-start}}
