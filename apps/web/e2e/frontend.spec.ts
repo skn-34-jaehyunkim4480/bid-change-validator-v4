@@ -98,6 +98,9 @@ test('usage guide lives at the bottom of the notice page and the guide tab is go
 
 test('recommendations uses a rounded profile-style header and plain-language descriptions', async ({ page }) => {
   await mockApi(page);
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j22', name: '합성회사 J22' }],
+  }));
   await page.goto('/recommendations');
   await expect(page.locator('.app-title-band')).toHaveCount(0);
   const hero = page.locator('.product-hero');
