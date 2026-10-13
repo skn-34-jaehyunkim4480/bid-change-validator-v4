@@ -96,3 +96,14 @@ All work was performed in an ISOLATED Docker validation container on current EC2
 - Restart required to reload changed private frozen artifacts due in-process cache. Do not merge PRs or enable the experimental route in production without separate approval.
 
 **Note:** This validation is strictly for the Oct 15 demo deadline; no work after the presentation is planned.
+
+## 2026-10-13: fix malformed Unicode cancellation SQL predicates
+
+The experimental live-candidate query contained literal percent-question-question-percent patterns in TWO LIKE filters, where the existing operational candidate policy had proper Korean cancellation/invalidity words. Fixed those two patterns to match existing /ml SQL policy; the additional _not_cancelled() and eligible_window() Python guards were already correct and remain unchanged. This is a confirmed SQL filter bug, NOT evidence that a cancelled notice actually appeared in recommendations.
+
+Regression tests:
+- Inspect actual SQLAlchemy query bound parameters and assert exact cancellation patterns match existing /ml, including absence of malformed question marks.
+- Feed normal, Korean cancelled/invalid and English CANCELLED synthetic rows through the Python backup validity checks, asserting only normal remains.
+- Entire targeted ML regression suite: 83 passed locally.
+
+No PR merge or AWS production deployment performed as part of this correction. The AWS sidecar used in the preceding integration tests has already been removed.

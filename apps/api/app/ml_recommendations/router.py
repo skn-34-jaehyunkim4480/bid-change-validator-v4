@@ -341,9 +341,9 @@ def experimental_live_candidate_map(db: Session, *, now: datetime | None = None)
                     v.posted_at > now - timedelta(days=UNKNOWN_DEADLINE_DAYS),
                 ),
             ),
-            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%??%"),
+            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%취소%"),
             ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%cancel%"),
-            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%??%"),
+            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%무효%"),
         )
         .execution_options(yield_per=CANDIDATE_BATCH_SIZE)
     )

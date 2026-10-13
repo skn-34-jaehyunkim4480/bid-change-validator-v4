@@ -281,3 +281,69 @@ def test_enrichment_refuses_more_than_100_notices():
     from app.ml_recommendations.router import candidates
     with pytest.raises(ValueError,match="capped at 100"):
         candidates(object(),notice_ids={f"n{i}" for i in range(101)})
+
+
+
+def test_sql_cancellation_predicates_match_existing_ml_candidate_policy():
+    """Bind-parameter comparison catches accidental Unicode -> ?? corruption."""
+    import app.ml_recommendations.router as m
+
+    class Capture:
+        def __init__(self):
+            self.statement = None
+
+        def execute(self, statement):
+            self.statement = statement
+            return []
+
+    old_db, new_db = Capture(), Capture()
+    assert m.candidates(old_db) == []
+    assert m.experimental_live_candidate_map(new_db) == {}
+
+    def cancel_patterns(db):
+        assert db.statement is not None
+        return {
+            value for value in db.statement.compile().params.values()
+            if isinstance(value, str) and value.startswith("%")
+        }
+
+    expected = {"%" + chr(0xCDE8) + chr(0xC18C) + "%",
+                "%" + chr(0xBB34) + chr(0xD6A8) + "%",
+                "%cancel%"}
+    assert expected.issubset(cancel_patterns(old_db))
+    assert cancel_patterns(new_db) == cancel_patterns(old_db)
+    assert "%??%" not in cancel_patterns(new_db)
+
+
+def test_experimental_live_map_defensively_excludes_cancelled_and_invalid_notices():
+    """Even if SQL returns a cancelled row, Python guards must reject it."""
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+    import app.ml_recommendations.router as m
+
+    now = datetime(2026, 10, 13, 11, 0, tzinfo=timezone.utc)
+    base = [str(uuid4()) for _ in range(12)]
+    valid_posted, valid_closed = now - timedelta(days=1), now + timedelta(days=1)
+
+    def row(i, notice_kind, version_kind):
+        return (
+            base[2*i], "Notice "+str(i), notice_kind,
+            base[2*i+1], 1, version_kind, valid_posted, valid_closed,
+        )
+
+    normal = row(0, "regular", "regular")
+    cancelled_notice = row(1, chr(0xCDE8)+chr(0xC18C), "regular")
+    cancelled_version = row(2, "regular", chr(0xCDE8)+chr(0xC18C))
+    invalid_notice = row(3, chr(0xBB34)+chr(0xD6A8), "regular")
+    invalid_version = row(4, "regular", chr(0xBB34)+chr(0xD6A8))
+    cancelled_en = row(5, "regular", "CANCELLED")
+    rows = [normal, cancelled_notice, cancelled_version,
+            invalid_notice, invalid_version, cancelled_en]
+
+    class DB:
+        def execute(self, stmt):
+            return iter(rows)
+
+    found = m.experimental_live_candidate_map(DB(), now=now)
+    assert set(found) == {normal[3]}
+    assert found[normal[3]]["notice_id"] == normal[0]
