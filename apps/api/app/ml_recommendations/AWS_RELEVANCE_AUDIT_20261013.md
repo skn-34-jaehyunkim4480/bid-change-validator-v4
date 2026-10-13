@@ -54,3 +54,10 @@ The **zero notice-number intersection** between the older repository Golden 124-
 `..\ml-relevance-audit-private-20261013\aws_sample_50.json` — earlier bounded 50-version result.
 
 **No deployment, model download, paid API, data change, PR merge, or Champion promotion.**
+## Subsequent bounded offline AWS task-draft experiment
+
+A standalone read-only task-block draft exporter, `aws_task_draft.py`, was added without changing production code. It permits at most 200 notice versions, batches of at most 25 version-bound documents, an RDS read-only transaction, and a 11-second SQL timeout. It returns only a selected document and at most three bounded source block windows per version into local private files. **No draft window is automatically promoted to `VERIFIED_TASK` or to a relevance label.**
+
+Pilot on 2026-10-13: selected 56 varied notices from the 383-version snapshot; 56 versions yielded a candidate source document, but keyword heuristics located task-like windows in only **22**; **34** had none. Inspection revealed false positives from bidder instructions, terms and contract boilerplate. The draft therefore needs better section filtering and independent review before becoming a verified task corpus. These results do **not** imply that the remaining 34 lack business-task content elsewhere; the current exporter chooses only one document per version.
+
+Local-only outputs: `..\ml-relevance-audit-private-20261013\tasks\draft.json` and `batch_*.json`. The 383-version AWS coverage from the earlier audit remains intact. No network downloads except the separate local CPU-model smoke preparation; no task labels, production changes, or PR merge.
