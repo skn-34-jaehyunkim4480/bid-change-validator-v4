@@ -535,20 +535,20 @@ def _detail_parts(detail: str, field_name: str | None = None) -> list[str]:
     return [part for part in parts if part] or [detail]
 
 
-def _notice_haystack(chunks: list[dict[str, Any]]) -> str:
-    """선별된 청크 전체를 이어붙인 비교용 본문.
+def _notice_haystack(chunks: list[dict[str, Any]]) -> tuple[str, ...]:
+    """Return normalized chunks without joining unrelated source boundaries.
 
-    청크 경계는 우리가 자른 것이지 공고가 나눈 것이 아니다. 세부 조건이 옆 청크에 있다고
-    해서 그 공고에 없는 말이 되지는 않는다.
+    A detail may be in a neighbouring chunk, but concatenating chunks can
+    fabricate a phrase spanning different clauses or even different documents.
     """
-    return "".join(_squash(chunk.get("text") or "") for chunk in chunks)
+    return tuple(_squash(chunk.get("text") or "") for chunk in chunks)
 
 
 def validate_extracted_slot(
     slot: dict[str, Any],
     chunks: list[dict[str, Any]],
     *,
-    notice_text: str | None = None,
+    notice_text: tuple[str, ...] | None = None,
 ) -> tuple[bool, str, dict[str, Any] | None]:
     """Reject unsupported source text; clear unverified document locations.
 
@@ -574,7 +574,7 @@ def validate_extracted_slot(
 
     source_original = source_chunk.get("text") or ""
     source_text = _squash(source_original)
-    haystack = _notice_haystack(chunks) if notice_text is None else notice_text
+    haystacks = _notice_haystack(chunks) if notice_text is None else notice_text
     for field_name in _DETAIL_RAW_FIELDS:
         detail = (slot.get(field_name) or "").strip()
         if not detail:
@@ -588,14 +588,14 @@ def validate_extracted_slot(
             slot[field_name] = snapped
             continue
         squashed_whole = _squash(detail)
-        if squashed_whole and squashed_whole in haystack:
+        if squashed_whole and any(squashed_whole in text for text in haystacks):
             slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
             continue
         for part in _detail_parts(detail, field_name):
             squashed = _squash(part)
             if not squashed or squashed in source_text:
                 continue
-            if squashed in haystack:
+            if any(squashed in text for text in haystacks):
                 # 같은 공고 안의 다른 청크에 있다. 어디서 확인했는지는 남긴다.
                 slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
                 continue
