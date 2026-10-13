@@ -262,7 +262,7 @@ test('primary BM25 recommendations load automatically, hide legacy fallback, gro
     reason: 'Model-generated text similarity; no directly matching keyword identified',
     version_number: 1, analysis_run_id: null, analysis_version: null, analysis_status: 'UNKNOWN',
     qualification_state: 'UNKNOWN', qualification_reason: 'No successful current-version analysis',
-    rule_version: null, is_stale: false, deadline_source: 'explicit', effective_deadline: null,
+    rule_version: null, is_stale: false, deadline_source: number === 2 ? 'assumed_40_days' : 'explicit', effective_deadline: null,
   });
   const rows = [...Array.from({ length: 12 }, (_, i) => item(i + 1)), item(13, '행사 운영 1')];
   let actualSearchCalls = 0;
@@ -291,6 +291,7 @@ test('primary BM25 recommendations load automatically, hide legacy fallback, gro
   await expect(page.getByText('행사 운영 11', { exact: true })).toHaveCount(0);
   await expect(page.getByText('동일 제목의 다른 공고 1건', { exact: false })).toBeVisible();
   await expect(page.getByText('Model-generated text similarity', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('마감일이 확인되지 않아 게시일 기준으로 임시 추천한 공고입니다.', { exact: false })).toHaveCount(1);
   await expect(page.getByText('model_not_configured')).toHaveCount(0);
   expect(legacyCalls).toBe(0);
   expect(actualSearchCalls).toBe(1);
