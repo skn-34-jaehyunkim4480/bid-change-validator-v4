@@ -312,7 +312,7 @@ test('primary recommendations fail closed without showing legacy pseudo-recommen
   }));
   await page.goto('/recommendations');
   await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
-  await expect(page.getByRole('alert')).toContainText('서버에서 비활성');
+  await expect(page.locator('section[aria-labelledby="ml-experiment-heading"]').getByRole('alert')).toContainText('서버에서 비활성');
   await expect(page.getByText('학습 모델 미적용')).toHaveCount(0);
 });
 
