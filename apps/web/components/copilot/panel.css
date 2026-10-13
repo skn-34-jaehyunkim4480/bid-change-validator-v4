@@ -72,8 +72,8 @@
 .copilot-page-item strong{font-size:13px;font-weight:700;line-height:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .copilot-page-item span{font-size:12px;line-height:17px;color:var(--product-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .copilot-panel.copilot-page-chat{position:relative;inset:auto;z-index:auto;display:flex;flex-direction:column;width:auto;max-width:none;height:auto;max-height:none;min-height:0;border-radius:20px;box-shadow:none}
-.copilot-page-chat .copilot-turn,.copilot-page-chat .copilot-empty,.copilot-page-chat .copilot-jobs,.copilot-page-chat .copilot-processing-options{width:100%;max-width:920px;margin-inline:auto}
-.copilot-page-chat .copilot-input>*{max-width:920px;margin-inline:auto;width:100%}
+.copilot-page-chat .copilot-turn,.copilot-page-chat .copilot-empty,.copilot-page-chat .copilot-jobs,.copilot-page-chat .copilot-processing-options{width:100%;max-width:none;margin-inline:0}
+.copilot-page-chat .copilot-input>*{max-width:none;margin-inline:0;width:100%}
 .copilot-page-empty{display:grid;place-items:center;gap:8px;height:100%;padding:24px;text-align:center;color:var(--product-muted)}
 @media(max-width:1023px){.copilot-page{grid-template-columns:1fr;height:auto;min-height:0}.copilot-page-list{max-height:220px}.copilot-panel.copilot-page-chat{height:min(640px,80dvh);border-radius:20px}}
 
@@ -89,14 +89,14 @@
 .copilot-page-list h2{padding:18px 14px 8px;font-size:13px;color:var(--product-muted)}
 .copilot-page-item[aria-current=page]{background:var(--product-tint)}
 .copilot-panel.copilot-page-chat{border:0;border-radius:0;background:transparent;font-size:15px;line-height:24px}
-/* 머리의 단추들이 본문 폭(920px) 밖 화면 끝으로 가지 않게, 본문 칸의 양쪽 끝에 맞춘다(2026-10-13). */
-.copilot-page-chat .copilot-header{border-bottom:0;padding:14px max(28px,calc((100% - 920px)/2)) 6px;min-height:0}
+/* 대화 칸은 폭 제한 없이 왼쪽 목록 바로 옆부터 화면 끝까지 쓴다(2026-10-13). 머리·본문·입력창의 양쪽 여백을 16px 로 맞춘다. */
+.copilot-page-chat .copilot-header{border-bottom:0;padding:14px 16px 6px;min-height:0}
 .copilot-page-chat .copilot-header h2{font-size:15px;font-weight:700;color:var(--product-body)}
-.copilot-page-chat .copilot-content{padding:8px 28px 20px;gap:22px}
+.copilot-page-chat .copilot-content{padding:8px 16px 20px;gap:22px}
 .copilot-page-chat .copilot-turn{gap:18px;margin-top:0}
 .copilot-page-chat .copilot-answer{background:transparent;padding:0;border-radius:0}
 .copilot-page-chat .copilot-question{max-width:80%;padding:10px 16px;background:var(--product-tint)}
-.copilot-page-chat .copilot-input{border-top:0;background:transparent;padding:0 28px 18px}
+.copilot-page-chat .copilot-input{border-top:0;background:transparent;padding:0 16px 18px}
 .copilot-page-chat .copilot-input-row{border:1px solid var(--product-line);border-radius:26px;background:var(--product-surface);padding:6px 8px 6px 16px;box-shadow:0 6px 24px rgba(31,42,82,.08)}
 .copilot-page-chat .copilot-input-row:focus-within{border-color:var(--product-accent)}
 .copilot-page-chat .copilot-input textarea{background:transparent;border:0;font-size:15px;line-height:22px;padding:8px 0;outline:none}
@@ -149,4 +149,4 @@
 .copilot-page-item[data-expired]{background:#e9ebf0}
 .copilot-page-item[data-expired]:hover{background:#dfe2e8}
 .copilot-page-item .copilot-expired{display:inline-block;color:#fff;font-size:11px;line-height:16px;overflow:visible;text-overflow:clip;vertical-align:1px}
-.copilot-page-chat .copilot-expired-note{width:100%;max-width:920px;margin-inline:auto}
+.copilot-page-chat .copilot-expired-note{width:100%;max-width:none;margin-inline:0}
