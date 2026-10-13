@@ -131,7 +131,6 @@ export default function CompanyPage() {
   const [error, setError] = useState('');
   const [industryQuery, setIndustryQuery] = useState('');
   const [industryOptions, setIndustryOptions] = useState<MasterCode[]>([]);
-  const [selectedIndustry, setSelectedIndustry] = useState('');
   // 저장 전 업종 목록. null이면 「서버 값 그대로」라는 뜻이고, 배열이면 편집 중이다.
   const [industryDraft, setIndustryDraft] = useState<Array<{ code: string; name: string }> | null>(null);
   // 소재지·기업 구분·상시 근로자. 업종과 같은 규칙 — null이면 「서버 값 그대로」다.
@@ -152,8 +151,9 @@ export default function CompanyPage() {
     staff_total: '8',
   });
 
-  // 회사를 처음 만들 때 조달청에서 불러온 업종. 있으면 아래에서 고른 업종 대신 이 목록으로 만든다.
-  const [lookedUpIndustries, setLookedUpIndustries] = useState<Array<{ code: string; name: string }>>([]);
+  // 회사를 처음 만들 때 고른 업종. 검색해서 직접 고른 것과 조달청에서 불러온 것이 한 목록에 모인다(2026-10-14).
+  // 예전에는 목록의 첫 업종이 말없이 골라져 있었고 하나만 고를 수 있어, 고르지 않은 업종으로 회사가 만들어졌다.
+  const [createIndustries, setCreateIndustries] = useState<Array<{ code: string; name: string }>>([]);
 
   const company = useMemo(
     () => companies.find((item) => item.id === selectedId) ?? companies[0] ?? null,
@@ -338,7 +338,7 @@ export default function CompanyPage() {
       ...(region ? { region_code: region.code, region_name: region.name } : {}),
     }));
     const industries = found.industries.filter((item) => item.registrable).map(({ code, name }) => ({ code, name }));
-    setLookedUpIndustries(industries);
+    setCreateIndustries((current) => [...current, ...industries.filter((item) => !current.some((row) => row.code === item.code))]);
     return `입력란을 채웠습니다${industries.length ? ` — 업종 ${industries.length}개` : ''}. 확인한 뒤 「회사 프로필 만들기」를 눌러 주세요.`;
   }
 
@@ -353,7 +353,6 @@ export default function CompanyPage() {
       setCompanies(companyItems);
       if (companyItems[0]) setSelectedId((value) => value || companyItems[0].id);
       setIndustryOptions(industryResult.items);
-      setSelectedIndustry((value) => value || industryResult.items[0]?.code || '');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '회사 프로필을 불러오지 못했습니다.');
     } finally {
@@ -383,16 +382,15 @@ export default function CompanyPage() {
     try {
       const result = await searchIndustryCodes(industryQuery);
       setIndustryOptions(result.items);
-      if (result.items[0]) setSelectedIndustry(result.items[0].code);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '업종 검색에 실패했습니다.');
     }
   }
 
   async function submitCompany() {
-    const industryCodes = lookedUpIndustries.length ? lookedUpIndustries.map((item) => item.code) : selectedIndustry ? [selectedIndustry] : [];
+    const industryCodes = createIndustries.map((item) => item.code);
     if (!industryCodes.length) {
-      setError('업종 코드를 선택해주세요.');
+      setError('업종을 하나 이상 골라 주세요. 업종명이나 코드로 검색해 목록에서 고를 수 있습니다.');
       return;
     }
     setBusy('create');
@@ -474,27 +472,40 @@ export default function CompanyPage() {
 
               <div className="mt-6">
                 <span className="text-sm font-medium">업종</span>
-                {lookedUpIndustries.length > 0 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--product-tint)] px-3 py-2 text-[13px]">
-                    <span className="font-semibold">조달청 등록 업종으로 만듭니다</span>
-                    {lookedUpIndustries.map((item) => <span key={item.code} className="rounded-full border border-[var(--product-line)] bg-white px-2.5 py-0.5"><strong>{item.code}</strong> {item.name}</span>)}
-                    <button type="button" className="ml-auto underline" onClick={() => setLookedUpIndustries([])}>직접 고르기</button>
-                  </div>
-                )}
-                <div className="mt-2 flex gap-2">
-                  <Input value={industryQuery} onChange={(event) => setIndustryQuery(event.target.value)} placeholder="업종명 또는 코드 검색" />
+                <p className="mt-1 text-[12.5px] text-[var(--product-muted)]">공고의 업종 제한과 대조하는 값입니다. 여러 개를 고를 수 있습니다.</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2" aria-label="고른 업종">
+                  {createIndustries.length ? createIndustries.map((item) => (
+                    <span key={item.code} className="inline-flex items-center gap-2 rounded-full border border-[var(--product-line)] bg-[#f3f5ff] py-1.5 pl-3 pr-1.5 text-[13px]">
+                      <strong>{item.code}</strong>
+                      <span className="text-[var(--product-muted)]">{item.name}</span>
+                      <button type="button" aria-label={`${item.name} 빼기`} onClick={() => setCreateIndustries((current) => current.filter((row) => row.code !== item.code))} className="rounded-full p-1 text-[var(--product-muted)] hover:bg-white hover:text-[var(--product-ink)]">
+                        <X className="size-3.5" />
+                      </button>
+                    </span>
+                  )) : <span className="text-[13px] text-amber-700">아직 고른 업종이 없습니다. 아래에서 검색해 고르거나, 위에서 사업자등록번호로 불러오세요.</span>}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Input value={industryQuery} onChange={(event) => setIndustryQuery(event.target.value)} placeholder="업종명 또는 코드 검색" aria-label="업종 검색"
+                    onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchIndustries(); } }} />
                   <Button variant="outline" onClick={() => void searchIndustries()}><Search />검색</Button>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {industryOptions.slice(0, 6).map((item) => (
-                    <button key={item.code} type="button" onClick={() => setSelectedIndustry(item.code)} className={`rounded-xl border px-4 py-3 text-left text-sm ${selectedIndustry === item.code ? 'border-[var(--product-accent)] bg-[#f3f5ff]' : 'border-[var(--product-line)]'}`}>
-                      <strong>{item.code}</strong><span className="ml-2 text-[var(--product-muted)]">{item.name}</span>
-                    </button>
-                  ))}
+                  {industryOptions.slice(0, 6).map((item) => {
+                    const picked = createIndustries.some((row) => row.code === item.code);
+                    return (
+                      <button key={item.code} type="button" aria-pressed={picked}
+                        onClick={() => setCreateIndustries((current) => picked ? current.filter((row) => row.code !== item.code) : [...current, { code: item.code, name: item.name }])}
+                        className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm ${picked ? 'border-[var(--product-accent)] bg-[#f3f5ff]' : 'border-[var(--product-line)] hover:border-[var(--product-accent)]'}`}>
+                        <span className="min-w-0"><strong>{item.code}</strong><span className="ml-2 text-[var(--product-muted)]">{item.name}</span></span>
+                        {picked ? <Check className="size-4 shrink-0 text-[var(--product-accent-deep)]" /> : <Plus className="size-4 shrink-0 text-[var(--product-muted)]" />}
+                      </button>
+                    );
+                  })}
+                  {industryOptions.length === 0 && <p className="text-[13px] text-[var(--product-muted)] sm:col-span-2">찾은 업종이 없습니다. 다른 낱말이나 코드로 검색해 보세요.</p>}
                 </div>
               </div>
 
-              <Button className="mt-8 rounded-full px-6" onClick={() => void submitCompany()} disabled={!form.name.trim() || busy !== null}>
+              <Button className="mt-8 rounded-full px-6" onClick={() => void submitCompany()} disabled={!form.name.trim() || createIndustries.length === 0 || busy !== null}>
                 {busy === 'create' ? <LoaderCircle className="animate-spin" /> : <Plus />}
                 회사 프로필 만들기
               </Button>
