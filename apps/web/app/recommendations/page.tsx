@@ -220,6 +220,11 @@ export default function RecommendationsPage() {
                               {' · '}공고 버전 {item.version_number}
                               {' · '}관련도 점수 {item.relevance_score.toFixed(3)}
                             </p>
+                            {item.deadline_source === 'assumed_40_days' && (
+                              <p className="mt-1 text-xs font-medium text-amber-800">
+                                마감일이 확인되지 않아 게시일 기준으로 임시 추천한 공고입니다. 실제 마감일을 확인해 주세요.
+                              </p>
+                            )}
                             {item.qualification_state === 'UNKNOWN' && (
                               <p className="mt-1 text-xs text-slate-600">아직 이 공고의 참가자격을 검토하지 않았습니다.</p>
                             )}
