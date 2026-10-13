@@ -118,8 +118,9 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     match: (pathname) => pathname.startsWith('/recommendations'),
     page: {
       title: 'AI 추천',
-      description: '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.',
-      breadcrumb: '홈 › 공고 추천',
+      description: '우리 회사에 어울리는 입찰 공고를 찾고, 관심 있는 공고의 참가자격을 확인합니다.',
+      breadcrumb: '홈 › AI 추천',
+      showTitleBand: false,
     },
   },
   {

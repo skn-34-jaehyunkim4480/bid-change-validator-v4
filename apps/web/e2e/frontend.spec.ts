@@ -96,29 +96,18 @@ test('usage guide lives at the bottom of the notice page and the guide tab is go
   expect(response?.status()).toBe(404);
 });
 
-test('title bands share spacing on the pages that keep them, and case pages start without one', async ({ page }) => {
+test('recommendations uses a rounded profile-style header and plain-language descriptions', async ({ page }) => {
   await mockApi(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const pages = [
-    ['/recommendations', 'AI 추천', '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.', '홈 › 공고 추천'],
-  ];
-  const positions = [];
-  for (const [route, title, description, crumb] of pages) {
-    await page.goto(route);
-    const band = page.locator('.app-title-band');
-    await expect(band).toHaveCount(1);
-    await expect(band).toHaveCSS('height', '142px');
-    await expect(band.locator('h1')).toHaveText(title);
-    await expect(band.locator('p').first()).toHaveText(description);
-    await expect(band.locator('p').last()).toHaveText(crumb);
-    positions.push(await band.evaluate(section => {
-      const top = section.getBoundingClientRect().top;
-      return [section.querySelector('h1'), section.querySelector('h1 + p'), section.querySelector(':scope > div > p:last-child')]
-        .map(el => Math.round(el!.getBoundingClientRect().top - top));
-    }));
-  }
-  for (const position of positions.slice(1)) expect(position).toEqual(positions[0]);
-  // 내 입찰 건과 회사 프로필은 제목 띠 없이 내용으로 바로 시작한다.
+  await page.goto('/recommendations');
+  await expect(page.locator('.app-title-band')).toHaveCount(0);
+  const hero = page.locator('.product-hero');
+  await expect(hero).toHaveCount(1);
+  await expect(hero).toHaveCSS('border-radius', '22px');
+  await expect(hero.getByRole('heading', { name: 'AI 추천', level: 1 })).toBeVisible();
+  await expect(hero.getByText('홈 › AI 추천')).toBeVisible();
+  await expect(hero.getByText('우리 회사에 어울리는 입찰 공고를 찾아드립니다.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.getByText('BM25 기반 검색이며', { exact: false })).toHaveCount(0);
   for (const route of ['/qualification', '/company']) {
     await page.goto(route);
     await expect(page.locator('.app-title-band')).toHaveCount(0);
@@ -291,6 +280,10 @@ test('primary BM25 recommendations load automatically, hide legacy fallback, gro
   });
   await page.goto('/recommendations');
   await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.getByText('현재 추천 대상으로 분류한 공고 3589건에서 찾았습니다.')).toBeVisible();
+  await page.getByText('검색 범위 자세히 보기').click();
+  await expect(page.getByText('공고명으로만 검색한 공고 3245건', { exact: false })).toBeVisible();
+  await expect(page.getByText('참가자격: 확인 전', { exact: false }).first()).toBeVisible();
   await expect(page.getByText('행사 운영 1', { exact: true })).toBeVisible();
   await expect(page.getByText('행사 운영 11', { exact: true })).toHaveCount(0);
   await expect(page.getByText('동일 제목의 다른 공고 1건', { exact: false })).toBeVisible();
