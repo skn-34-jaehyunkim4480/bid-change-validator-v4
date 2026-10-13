@@ -200,16 +200,14 @@ export default function RecommendationsPage() {
                   </details>
                 </div>
                 {[
-                  { label: '참가자격 충족이 확인된 공고', rows: experimental.data.items },
-                  { label: '추천 공고 · 참가자격 확인 필요', rows: experimental.data.needs_review_items },
+                  { label: '참가자격 충족이 확인된 공고', rows: experimental.data.items, empty: '아직 참가자격까지 확인된 공고가 없습니다.' },
+                  { label: '추천 공고 · 참가자격 확인 필요', rows: experimental.data.needs_review_items, empty: '현재 확인할 추천 공고가 없습니다.' },
                 ].map((group) => (
                   <div key={group.label}>
                     <h3 className="text-sm font-semibold">{group.label} ({group.rows.length}건)</h3>
                     {group.rows.length === 0 ? (
                       <p className="mt-2 text-xs text-slate-600">
-                        {group.rows === experimental.data.items
-                          ? '아직 참가자격까지 확인된 공고가 없습니다.'
-                          : '현재 확인할 추천 공고가 없습니다.'}
+                        {group.empty}
                       </p>
                     ) : (
                       <ul className="mt-2 divide-y rounded-xl border px-4">
