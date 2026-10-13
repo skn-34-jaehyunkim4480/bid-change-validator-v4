@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { sharedQueryClient, invalidateSharedData } from '@/lib/shared-query-cache';
 import { ArrowUpRight, BrainCircuit, RefreshCw, ShieldCheck } from 'lucide-react';
 import { NavigationLink } from '@/components/navigation-link';
+import { JudgmentLinkButton } from '@/components/product/judgment-link-button';
 import { Button } from '@/components/ui/button';
 import { useAppUser } from '@/components/app-user-context';
 import { listCompanies } from '@/lib/qualification-api';
@@ -191,9 +192,9 @@ export default function RecommendationsPage() {
                               className="inline-flex items-center gap-1 font-semibold text-blue-700 underline">
                               공고 상세·첨부 원문 <ArrowUpRight size={14} aria-hidden="true" />
                             </NavigationLink>
-                            <NavigationLink href="/qualification" className="font-semibold text-blue-700 underline">
-                              자격판정 화면
-                            </NavigationLink>
+                            {/* 추천된 공고를 바로 그 공고의 판정 화면으로 연다(검토 건이 없으면 만든다). 2026-10-13 */}
+                            <JudgmentLinkButton noticeId={item.notice_id} label="이 공고 판정 화면으로"
+                              className="inline-flex items-center gap-1 font-semibold text-blue-700 underline disabled:opacity-60" />
                           </div>
                           {item.qualification_reason && (
                             <p className="mt-2 text-xs text-slate-600">판정 근거 상태: {item.qualification_reason}</p>
@@ -228,6 +229,10 @@ export default function RecommendationsPage() {
                         {item.deadline_source === 'assumed_40_days' && (
                           <p className="mt-1 text-xs text-amber-700">마감일 미상 · 임시 유효기간</p>
                         )}
+                        <p className="mt-2 text-xs">
+                          <JudgmentLinkButton noticeId={item.notice_id} label="이 공고 판정 화면으로"
+                            className="inline-flex items-center gap-1 font-semibold text-blue-700 underline disabled:opacity-60" />
+                        </p>
                       </div>
                       <span className="text-xs text-slate-600">연관성 점수 {item.relevance_score.toFixed(3)}</span>
                     </li>

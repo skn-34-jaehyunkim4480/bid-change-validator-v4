@@ -9,6 +9,16 @@ on:
         required: true
         type: boolean
         default: false
+      seed_golden:
+        description: After deploying, load the Golden v0.2 test accounts (golden-j01..j32) into the dev database. Needs deploy and golden_password.
+        required: false
+        type: boolean
+        default: false
+      golden_password:
+        description: Password for the Golden test accounts (12+ characters). Used only when seed_golden is checked; masked in logs.
+        required: false
+        type: string
+        default: ''
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -133,12 +143,30 @@ jobs:
           aws-region: ap-northeast-2
       - name: Deploy through SSM without SSH or GitHub-hosted secrets
         if: steps.target.outputs.current == 'true'
+        env:
+          # Manual runs only. Automatic deploys (workflow_run) have no inputs, so nothing is seeded.
+          SEED_GOLDEN: ${{ inputs.seed_golden }}
+          GOLDEN_PASSWORD: ${{ inputs.golden_password }}
         run: |
-          COMMANDS=$(jq -nc --arg bucket "$BUCKET" --arg sha "$DEPLOY_SHA" '{commands:[
+          # The Golden accounts are loaded only when asked for. Their password travels to the host as a
+          # root-only file that deploy.sh reads once and deletes; it is never echoed here.
+          SEED_B64=""
+          if [ "$SEED_GOLDEN" = "true" ]; then
+            if [ "${#GOLDEN_PASSWORD}" -lt 12 ]; then
+              echo "seed_golden needs golden_password of at least 12 characters" >&2
+              exit 1
+            fi
+            echo "::add-mask::$GOLDEN_PASSWORD"
+            SEED_B64=$(printf '%s' "$GOLDEN_PASSWORD" | base64 -w0)
+            echo "::add-mask::$SEED_B64"
+          fi
+          COMMANDS=$(jq -nc --arg bucket "$BUCKET" --arg sha "$DEPLOY_SHA" --arg seed "$SEED_B64" '{commands:[
             "set -eu",
             "install -d -m 0700 /opt/bidcheck",
             ("aws s3 cp s3://"+$bucket+"/deploy/runtime-"+$sha+".tar.gz /opt/bidcheck/runtime.tar.gz --region ap-northeast-2 --only-show-errors"),
             "tar -xzf /opt/bidcheck/runtime.tar.gz -C /opt/bidcheck",
+            (if $seed == "" then "rm -f /opt/bidcheck/golden-seed.password"
+             else "(umask 077; printf %s "+$seed+" | base64 -d > /opt/bidcheck/golden-seed.password)" end),
             ("bash /opt/bidcheck/deploy.sh "+$sha)
           ]}')
           ID=$(aws ssm send-command --instance-ids "$INSTANCE_ID" \

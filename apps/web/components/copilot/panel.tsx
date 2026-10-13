@@ -7,6 +7,7 @@ import { ChevronDown, Maximize2, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopilotNavigationLink } from './navigation-link';
 import { CopilotMascot } from './mascot';
+import { JudgmentLinkButton } from '@/components/product/judgment-link-button';
 import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
@@ -15,7 +16,7 @@ import { GENERAL_CHAT, MEMBERSHIP_REQUIRED, membershipModal, useMembership } fro
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import { getPreflightCase } from '@/lib/api';
-import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
+import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog, NoticeLink } from '@/lib/copilot-api';
 import './panel.css';
 
 const pages = { '/qualification': 'QUALIFICATION', '/ask-back': 'ASK_BACK', '/evidence': 'EVIDENCE', '/changes': 'CHANGES' } as const;
@@ -424,6 +425,24 @@ function FreeAnswer({ answer }: { answer: string }) {
   </div>;
 }
 
+/** 일반 도우미가 찾아 준 공고들. 공고마다 판정 화면으로 가는 단추가 있다. */
+function NoticeLinks({ links }: { links: NoticeLink[] }) {
+  return <ul className="copilot-notice-links" aria-label="찾은 공고">
+    {links.map(link => <li key={link.notice_id}>
+      <div className="copilot-notice-link-text">
+        <strong>{link.title}</strong>
+        <span>
+          {link.bid_notice_no}{link.institution ? ` · ${link.institution}` : ''}
+          {link.bid_closed_at ? ` · 마감 ${new Date(link.bid_closed_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}` : ''}
+          {link.expired && <em className="copilot-expired">만료됨</em>}
+          {link.note ? ` · ${link.note}` : ''}
+        </span>
+      </div>
+      <JudgmentLinkButton noticeId={link.notice_id} bidNoticeNo={link.bid_notice_no} autostart={link.action === 'JUDGE'} className="copilot-notice-link-go" />
+    </li>)}
+  </ul>;
+}
+
 function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void }) {
   const p = response.presentation;
   const { controller, action } = useActions(caseId);
@@ -456,6 +475,7 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
       {p.limitations.map((text, i) => <p className="copilot-limitation" key={i}>{text}</p>)}
       {p.next_action && <p>{p.next_action.label}</p>}
     </> : <FreeAnswer answer={response.answer} />}
+    {response.notice_links && response.notice_links.length > 0 && <NoticeLinks links={response.notice_links} />}
     {response.sources.length > 0 && <details><summary>원문 근거 {response.sources.length}건</summary>
       {response.sources.map(source => <div className="copilot-source" key={source.ref}>
         <SourceChip source={source} caseId={caseId} analysisRunId={analysisRunId} />

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from bidengine.contracts import Evidence
 from bidengine.rag.answer import GroundedCitation
 from bidengine.rag.retrieval import retrieve
+from .notice_links import NoticeLink
 from ..document_rag.service import load_or_build_version_index
 from bidengine.rag.store import create_openai_embeddings
 from ..models import PreflightCase
@@ -91,6 +92,8 @@ class CopilotChatResponse(BaseModel):
     reply_context: ReplyContext | None = None
     presentation: Presentation | None = None
     envelope: 'AnswerEnvelope | None' = None
+    # 일반 도우미가 찾아 준 공고들. 화면이 공고마다 판정 화면으로 가는 단추를 단다(copilot/notice_links.py).
+    notice_links: list[NoticeLink] = Field(default_factory=list)
 
 
 REVALIDATION_VERB = r"(?:재검증|다시(?:검토|검증|판정|봐|보))"

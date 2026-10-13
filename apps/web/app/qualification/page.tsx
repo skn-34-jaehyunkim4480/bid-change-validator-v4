@@ -10,6 +10,7 @@ import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { forgetCase, lastCaseId, rememberCase } from '@/lib/last-case';
+import { AUTOSTART_PARAM } from '@/lib/open-judgment';
 import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
 import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
@@ -204,7 +205,9 @@ export default function QualificationPage() {
   const requestedCaseId = params.get('caseId');
   // 「검토 건 목록」으로 들어오면 보던 공고로 되돌리지 않고 목록을 보여 준다.
   const listRequested = params.get('view') === 'list';
-  return <QualificationWorkspace key={`${requestedCaseId}:${listRequested}`} requestedCaseId={requestedCaseId} listRequested={listRequested} />;
+  // AI Copilot·AI 추천의 「판정하기」로 들어오면 화면이 열리면서 검토를 바로 시작한다.
+  const autostart = params.get(AUTOSTART_PARAM) === '1';
+  return <QualificationWorkspace key={`${requestedCaseId}:${listRequested}`} requestedCaseId={requestedCaseId} listRequested={listRequested} autostart={autostart} />;
 }
 
 const CASES_PER_PAGE = 9;
@@ -323,7 +326,7 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
   );
 }
 
-function QualificationWorkspace({ requestedCaseId, listRequested }: { requestedCaseId: string | null; listRequested: boolean }) {
+function QualificationWorkspace({ requestedCaseId, listRequested, autostart }: { requestedCaseId: string | null; listRequested: boolean; autostart: boolean }) {
   const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
@@ -999,6 +1002,16 @@ function QualificationWorkspace({ requestedCaseId, listRequested }: { requestedC
         : companyValue(requirement, company, judgment);
       return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCaseId}` : evidenceHref); } : undefined} />;
   };
+
+  // 「판정하기」로 들어왔으면 검토 건이 다 뜬 뒤 한 번만 검토를 시작한다. 주소의 표시는 바로 지워, 새로고침해도 다시 돌지 않게 한다.
+  // 이미 판정이 있는 공고는 다시 돌리지 않고 결과를 보여 준다.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autostart || autoStarted.current || !activeCase || activeCase.id !== requestedCaseId || detailsPending || busy !== null) return;
+    autoStarted.current = true;
+    router.replace(`/qualification?caseId=${encodeURIComponent(activeCase.id)}`);
+    if (!displayJudgment) window.setTimeout(() => void runFullReview(false), 0);
+  });
 
   if (busy === 'load' || (!requestedCaseId && cases.length === 1 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
     {requestedCaseId && <ActionCard caseId={requestedCaseId} />}

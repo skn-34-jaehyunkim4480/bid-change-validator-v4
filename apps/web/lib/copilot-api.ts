@@ -112,6 +112,14 @@ export type CopilotChatResponse = {
   product_state: QualificationSummary | RequirementEvidenceResult | RequiredChecksResult | JudgmentProfileResult | ChangedNoticeResult | null;
   citations: CopilotSource[]; sources: CopilotSource[]; actions: ActionProposal[]; warnings: string[];
   external_processing_used: boolean; external_processing_scope: 'PUBLIC_NOTICE_DOCUMENT' | null;
+  /** 일반 도우미가 찾아 준 공고들. 공고마다 판정 화면으로 가는 단추를 단다. */
+  notice_links?: NoticeLink[];
+};
+
+/** action 이 JUDGE 면 판정 화면을 열면서 검토를 바로 시작한다(AI 추천 공고를 판정해 달라고 했을 때). */
+export type NoticeLink = {
+  notice_id: string; bid_notice_no: string; title: string; institution: string | null;
+  bid_closed_at: string | null; expired: boolean; action: 'OPEN' | 'JUDGE'; note: string | null;
 };
 export type JudgmentRun = {
   id: string; preflight_case_id: string; analysis_run_id: string; company_id: string; notice_version_id: string;
