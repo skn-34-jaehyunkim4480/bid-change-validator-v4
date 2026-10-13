@@ -291,10 +291,14 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
                       : <span className="rounded-full border border-[var(--product-line)] px-2 py-0.5 text-[12px] font-semibold">v{item.current_version_number}</span>}
                   </span>
                   <strong className="line-clamp-2 text-[17px] leading-6 text-[var(--product-ink)]">{item.notice_title || item.title}</strong>
-                  <span className="mt-auto text-[13px] text-[var(--product-muted)]">
-                    {expired && item.bid_closed_at
-                      ? `입찰 마감 ${new Date(item.bid_closed_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}`
-                      : `최근 변경 ${new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}`}
+                  {/* 왼쪽에 최근 변경일, 오른쪽 하단에 입찰 마감일(2026-10-13). 마감을 모르는 공고는 오른쪽을 비운다. */}
+                  <span className="mt-auto flex items-baseline justify-between gap-3 text-[13px] text-[var(--product-muted)]">
+                    <span>최근 변경 {new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}</span>
+                    {item.bid_closed_at && (
+                      <span className={`shrink-0 tabular-nums ${expired ? '' : 'font-semibold text-[var(--product-ink)]'}`}>
+                        마감 {new Date(item.bid_closed_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}
+                      </span>
+                    )}
                   </span>
                 </NavigationLink>
                 {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
