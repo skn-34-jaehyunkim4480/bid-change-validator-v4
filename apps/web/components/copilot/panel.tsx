@@ -11,7 +11,7 @@ import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
-import { MEMBERSHIP_REQUIRED, membershipModal } from '@/lib/membership';
+import { MEMBERSHIP_REQUIRED, membershipModal, useMembership } from '@/lib/membership';
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource, GuidedJobCatalog } from '@/lib/copilot-api';
@@ -265,6 +265,10 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
   useEffect(() => {
     if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open('COPILOT_QUESTION');
   }, [state.errorCode, state.revision]);
+  // 이 공고 대화에서 남은 질문 수(요금제 한도가 있는 계정만). 답이 올 때마다 다시 읽는다.
+  const membership = useMembership(general ? undefined : caseId || undefined, `${state.revision}:${state.busy}`);
+  const questionLimit = !general && caseId && membership?.limited ? membership.limits.copilot_questions : null;
+  const questionsLeft = questionLimit == null ? null : Math.max(0, questionLimit - (membership?.used.copilot_questions ?? 0));
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>
@@ -367,7 +371,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
           disabled={!caseId || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
-      <small>Enter 전송 · Shift+Enter 줄바꿈</small>
+      <small>Enter 전송 · Shift+Enter 줄바꿈{questionsLeft != null && <span className="copilot-quota" title="이 공고에서 AI Copilot 에 물을 수 있는 남은 횟수"> · 남은 질문 {questionsLeft}/{questionLimit}</span>}</small>
     </form>
   </>;
 }

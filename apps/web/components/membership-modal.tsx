@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, X } from 'lucide-react';
 import { ApiError } from '@/lib/api';
-import { getMembership, membershipModal, subscribeWithCode, won, type Membership, type MembershipKind, type MembershipPlan, type PlanCode } from '@/lib/membership';
+import { getMembership, membershipModal, membershipUsage, subscribeWithCode, won, type Membership, type MembershipKind, type MembershipPlan, type PlanCode } from '@/lib/membership';
 import './membership-modal.css';
 
 /*
@@ -12,13 +12,22 @@ import './membership-modal.css';
   결제는 붙어 있지 않다. 카드 입력 칸은 모양만 있고 어디로도 보내지 않으며, 시연에서는 아래의 멤버십 코드로 가입한다.
 */
 
-const REASON: Record<MembershipKind, { title: string; unit: string; key: 'notice_checks' | 'copilot_questions'; what: string }> = {
-  NOTICE_CHECK: { title: '이번 달에 확인할 수 있는 공고를 모두 썼습니다', unit: '건', key: 'notice_checks', what: '참가자격 확인' },
-  COPILOT_QUESTION: { title: '이번 달 AI Copilot 질문을 모두 썼습니다', unit: '회', key: 'copilot_questions', what: 'AI Copilot 질문' },
+const TITLE: Record<MembershipKind, string> = {
+  NOTICE_CHECK: '이번 달에 확인할 수 있는 공고를 모두 썼습니다',
+  COPILOT_QUESTION: '이 공고에서 물을 수 있는 AI Copilot 질문을 모두 썼습니다',
 };
 
-const limitText = (value: number | null, unit: string) => (value == null ? '제한 없음' : `월 ${value}${unit}`);
-const amountText = (value: number | null, unit: string) => (value == null ? '제한 없이' : `${value}${unit}`);
+// 참가자격 확인은 한 달에 몇 건, Copilot 질문은 공고 하나에 몇 회로 센다.
+const noticeLimit = (value: number | null) => (value == null ? '참가자격 확인 제한 없음' : `참가자격 확인 월 ${value}건`);
+const copilotLimit = (value: number | null) => (value == null ? 'AI Copilot 질문 제한 없음' : `공고마다 AI Copilot 질문 ${value}회`);
+
+function leadText(kind: MembershipKind, membership: Membership) {
+  const more = '멤버십에 가입하면 더 쓸 수 있습니다.';
+  if (kind === 'NOTICE_CHECK') {
+    return `${membership.plan_name} 요금제는 한 달에 공고 ${membership.limits.notice_checks ?? 0}건까지 참가자격을 확인할 수 있습니다(이번 달 ${membership.used.notice_checks ?? 0}건 사용). ${more}`;
+  }
+  return `${membership.plan_name} 요금제는 공고 하나에서 AI Copilot 질문을 ${membership.limits.copilot_questions ?? 0}회까지 쓸 수 있습니다. ${more}`;
+}
 
 export function MembershipModal() {
   const kind = useSyncExternalStore(membershipModal.subscribe, membershipModal.get, () => null);
@@ -47,7 +56,6 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
       .catch((cause) => { if (alive) setLoadError(cause instanceof Error ? cause.message : '요금제 정보를 불러오지 못했습니다.'); });
     return () => { alive = false; };
   }, []);
-  const reason = REASON[kind];
   const close = () => membershipModal.close();
 
   if (done) {
@@ -57,7 +65,7 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
         <span className="membership-done-mark" aria-hidden><Check size={22} /></span>
         <h2 id="membership-title">{done.plan_name} 요금제가 적용되었습니다</h2>
         <p className="membership-lead">
-          한 달에 참가자격 확인 {amountText(plan?.notice_checks ?? null, '건')}, 공고 안 AI Copilot 질문 {amountText(plan?.copilot_questions ?? null, '회')}까지 쓸 수 있습니다.
+          {noticeLimit(plan?.notice_checks ?? null)}, {copilotLimit(plan?.copilot_questions ?? null)}까지 쓸 수 있습니다.
           하던 작업을 다시 시도해 주세요.
         </p>
         <div className="membership-actions"><button type="button" className="membership-primary" onClick={close}>확인</button></div>
@@ -71,14 +79,12 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
     <div className="membership-body">
       <button type="button" className="membership-close" aria-label="닫기" onClick={close}><X size={18} /></button>
       {chosen && membership ? (
-        <PaymentStep plan={chosen} codeEnabled={membership.demo_code_enabled} onBack={() => setSelected(null)} onDone={setDone} />
+        <PaymentStep plan={chosen} codeEnabled={membership.demo_code_enabled} onBack={() => setSelected(null)} onDone={(next) => { setDone(next); membershipUsage.refresh(); }} />
       ) : (
         <>
-          <h2 id="membership-title">{reason.title}</h2>
+          <h2 id="membership-title">{TITLE[kind]}</h2>
           <p className="membership-lead">
-            {membership
-              ? `${membership.plan_name} 요금제는 ${reason.what}을 ${limitText(membership.limits[reason.key], reason.unit)}까지 쓸 수 있습니다(이번 달 ${membership.used[reason.key] ?? 0}${reason.unit} 사용). 멤버십에 가입하면 더 쓸 수 있습니다.`
-              : loadError || '요금제 정보를 불러오고 있습니다…'}
+            {membership ? leadText(kind, membership) : loadError || '요금제 정보를 불러오고 있습니다…'}
           </p>
           <ul className="membership-plans">
             {paidPlans.map((plan) => (
@@ -88,8 +94,8 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
                   <span className="membership-price">월 {won(plan.monthly_price)}</span>
                 </div>
                 <ul>
-                  <li>참가자격 확인 {limitText(plan.notice_checks, '건')}</li>
-                  <li>공고 안 AI Copilot 질문 {limitText(plan.copilot_questions, '회')}</li>
+                  <li>{noticeLimit(plan.notice_checks)}</li>
+                  <li>{copilotLimit(plan.copilot_questions)}</li>
                 </ul>
                 <button type="button" className="membership-primary" onClick={() => setSelected(plan.code)}>가입</button>
               </li>

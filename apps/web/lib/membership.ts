@@ -1,3 +1,4 @@
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { apiFetch, ApiError } from './api';
 
 /*
@@ -23,7 +24,9 @@ export type Membership = {
   plan_name: string;
   period: string;
   expires_at: string | null;
+  /** notice_checks 는 한 달에 확인할 수 있는 공고 수, copilot_questions 는 공고 대화 하나에서 물을 수 있는 횟수. */
   limits: { notice_checks: number | null; copilot_questions: number | null };
+  /** copilot_questions 는 공고(caseId)를 준 조회에서만 채워진다. */
   used: { notice_checks: number | null; copilot_questions: number | null };
   plans: MembershipPlan[];
   demo_code_enabled: boolean;
@@ -40,7 +43,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export const getMembership = () => request<Membership>('/api/v1/membership');
+/** caseId 를 주면 그 공고 대화에서 쓴 Copilot 질문 수도 함께 온다. */
+export const getMembership = (caseId?: string) =>
+  request<Membership>(`/api/v1/membership${caseId ? `?case_id=${encodeURIComponent(caseId)}` : ''}`);
 
 /** 멤버십 코드로 가입한다. 카드 정보는 보내지 않는다 — 서버에 그것을 받는 칸이 없다. */
 export const subscribeWithCode = (plan: Exclude<PlanCode, 'FREE'>, membershipCode: string) =>
@@ -62,6 +67,27 @@ export function openMembershipIfRequired(error: unknown, kind: MembershipKind): 
   if (!(error instanceof ApiError) || error.code !== MEMBERSHIP_REQUIRED) return false;
   membershipModal.open(kind);
   return true;
+}
+
+/** 사용량이 바뀌었을 수 있을 때(검토 완료, 가입) 부르면 화면의 한도 표시가 다시 읽는다. */
+let usageVersion = 0;
+const usageListeners = new Set<() => void>();
+export const membershipUsage = {
+  subscribe: (listener: () => void) => { usageListeners.add(listener); return () => { usageListeners.delete(listener); }; },
+  get: () => usageVersion,
+  refresh: () => { usageVersion += 1; usageListeners.forEach((listener) => listener()); },
+};
+
+/** 지금 계정의 요금제와 사용량. 불러오기 전이거나 실패하면 null 이고, 그때는 한도 표시를 그리지 않는다. */
+export function useMembership(caseId?: string, tick?: string | number): Membership | null {
+  const version = useSyncExternalStore(membershipUsage.subscribe, membershipUsage.get, () => 0);
+  const [value, setValue] = useState<Membership | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getMembership(caseId).then((next) => { if (alive) setValue(next); }).catch(() => { /* 표시만 생략한다 */ });
+    return () => { alive = false; };
+  }, [caseId, tick, version]);
+  return value;
 }
 
 export const won = (amount: number) => `${amount.toLocaleString('ko-KR')}원`;

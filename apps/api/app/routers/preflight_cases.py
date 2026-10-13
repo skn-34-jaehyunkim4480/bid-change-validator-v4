@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -60,10 +61,22 @@ def _case_read(db: Session, case: PreflightCase) -> PreflightCaseRead:
         baseline_version_number=(baseline_version.version_number if baseline_version else None),
         current_version_id=case.current_version_id,
         current_version_number=current_version.version_number,
+        bid_closed_at=current_version.bid_closed_at,
+        expired=_is_expired(current_version),
         documents=[ProposalDocumentRead.model_validate(document) for document in documents],
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
+
+
+def _is_expired(version: BidNoticeVersion) -> bool:
+    """입찰서 제출 마감이 지났는가. 마감을 모르는 공고는 만료로 보지 않는다."""
+    closed = version.bid_closed_at
+    if closed is None:
+        return False
+    if closed.tzinfo is None:
+        closed = closed.replace(tzinfo=timezone.utc)
+    return closed < datetime.now(timezone.utc)
 
 
 def _get_case(db: Session, case_id: UUID) -> PreflightCase:
@@ -194,6 +207,25 @@ def get_case(
     user: AppUser | None = Depends(get_optional_current_user),
 ) -> PreflightCaseRead:
     return _case_read(db, authorize_case_access(db, user, case_id))
+
+
+@router.delete("/{case_id}", status_code=204)
+def delete_expired_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> Response:
+    """마감이 지난 공고의 검토 건을 지운다. 판정·답변·재검증 기록과 올린 문서 기록이 함께 지워진다(FK CASCADE).
+
+    마감 전인 건은 지우지 않는다 — 진행 중인 검토를 실수로 없애지 않게 한다.
+    """
+    case = authorize_case_access(db, user, case_id)
+    version = db.get(BidNoticeVersion, case.current_version_id)
+    if version is None or not _is_expired(version):
+        raise ApiError(409, "PREFLIGHT_CASE_NOT_EXPIRED", "입찰 마감이 지난 공고만 지울 수 있습니다.")
+    db.delete(case)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/{case_id}/documents", response_model=ProposalDocumentRead, status_code=201)

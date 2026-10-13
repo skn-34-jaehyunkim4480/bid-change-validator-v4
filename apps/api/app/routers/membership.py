@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +32,7 @@ class UsageRead(BaseModel):
 
 class MembershipRead(BaseModel):
     # False 면 이 계정에는 한도가 없다(시스템 관리자, 한도를 켜지 않은 환경).
+    # used.copilot_questions 는 case_id 를 준 조회에서만 채워진다(공고 대화마다 센다).
     limited: bool
     plan: Literal["FREE", "BASIC", "UNLIMITED"]
     plan_name: str
@@ -51,9 +53,11 @@ class MembershipSubscribe(BaseModel):
 
 @router.get("", response_model=MembershipRead)
 def read_membership(
+    case_id: UUID | None = None,
     db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user),
 ) -> MembershipRead:
-    return MembershipRead.model_validate(membership_state(db, user))
+    # case_id 를 주면 그 공고 대화에서 쓴 Copilot 질문 수를 함께 준다. 자기 계정이 쓴 것만 세므로 권한 검사는 따로 필요 없다.
+    return MembershipRead.model_validate(membership_state(db, user, case_id))
 
 
 @router.post("/subscribe", response_model=MembershipRead)

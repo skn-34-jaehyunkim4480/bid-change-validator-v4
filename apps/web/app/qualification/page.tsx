@@ -2,14 +2,14 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Trash2 } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
-import { openMembershipIfRequired } from '@/lib/membership';
+import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
 import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
@@ -24,6 +24,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import type { HighlightSource } from '@/lib/source-highlight';
 import {
   ApiError,
+  deleteExpiredPreflightCase,
   getNotice,
   getNoticeVersions,
   listNotices,
@@ -204,8 +205,53 @@ export default function QualificationPage() {
 
 const CASES_PER_PAGE = 9;
 
+/** 요금제 한도가 있는 계정에게 이번 달에 참가자격을 확인한 공고 수와 상한을 보여 준다. 한도가 없으면 그리지 않는다. */
+function NoticeCheckQuota({ className = '' }: { className?: string }) {
+  const membership = useMembership();
+  const limit = membership?.limited ? membership.limits.notice_checks : null;
+  if (!membership || limit == null) return null;
+  return (
+    <span className={`inline-flex items-center rounded-full border border-[var(--product-line)] bg-white px-3 py-1 text-[12px] font-semibold tabular-nums text-[var(--product-muted)] ${className}`}
+      title="같은 공고를 다시 검토하는 것은 세지 않습니다">
+      이번 달 참가자격 확인 {membership.used.notice_checks ?? 0}/{limit}건 · {membership.plan_name}
+    </span>
+  );
+}
+
+/** 마감이 지난 공고의 검토 건을 지운다. 한 번 더 눌러야 지워진다. */
+function DeleteExpiredCase({ caseId, onDeleted, className = '' }: { caseId: string; onDeleted: () => void; className?: string }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  async function remove() {
+    setBusy(true);
+    setFailure('');
+    try {
+      await deleteExpiredPreflightCase(caseId);
+      onDeleted();
+    } catch (cause) {
+      setFailure(cause instanceof Error ? cause.message : '삭제하지 못했습니다.');
+      setBusy(false);
+    }
+  }
+  if (!asking) return (
+    <button type="button" className={`inline-flex items-center gap-1 rounded-full border border-[#b9bec9] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#4a5060] hover:border-rose-300 hover:text-rose-700 ${className}`} onClick={() => setAsking(true)}>
+      <Trash2 className="size-3.5" />삭제
+    </button>
+  );
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-[12px] ${className}`}>
+      <span className="font-semibold text-rose-700">{failure || '검토 기록이 함께 지워집니다.'}</span>
+      <button type="button" className="rounded-full bg-rose-600 px-2.5 py-1 font-semibold text-white disabled:opacity-60" onClick={() => void remove()} disabled={busy}>{busy ? '삭제 중…' : '삭제'}</button>
+      <button type="button" className="rounded-full border border-[#b9bec9] bg-white px-2.5 py-1 font-semibold text-[#4a5060]" onClick={() => { setAsking(false); setFailure(''); }} disabled={busy}>취소</button>
+    </span>
+  );
+}
+
+const EXPIRED_BADGE = 'rounded-full bg-[#5b6170] px-2 py-0.5 text-[12px] font-bold text-white';
+
 /** 검토 중인 공고를 3×3 카드로 보여 주고, 아홉 건을 넘으면 다음 쪽으로 넘긴다. */
-function CaseGrid({ cases }: { cases: PreflightCase[] }) {
+function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () => void }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(cases.length / CASES_PER_PAGE));
   const current = Math.min(page, pageCount - 1);
@@ -219,26 +265,40 @@ function CaseGrid({ cases }: { cases: PreflightCase[] }) {
             <h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">검토 중인 공고 {cases.length}건</h2>
             <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
           </div>
-          <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
+          <div className="flex flex-wrap items-center gap-2">
+            <NoticeCheckQuota />
+            <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
+          </div>
         </div>
         <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="검토 중인 공고">
           {shown.map((item) => {
             const changed = item.baseline_version_number != null && item.baseline_version_number !== item.current_version_number;
+            // 마감이 지난 공고는 진한 회색 바탕에 '만료됨' 을 붙이고, 카드 아래에서 지울 수 있다(2026-10-13).
+            const expired = item.expired === true;
             return (
-              <li key={item.id}>
+              <li key={item.id} className="relative">
                 <NavigationLink
                   href={`/qualification?caseId=${encodeURIComponent(item.id)}`}
-                  className="flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border border-[var(--product-line)] bg-white p-5 transition-colors hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]"
+                  className={`flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border p-5 transition-colors ${expired
+                    ? 'border-[#c3c7d0] bg-[#dfe2e8] pb-14 hover:border-[#9aa0ad]'
+                    : 'border-[var(--product-line)] bg-white hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]'}`}
                 >
                   <span className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)]">
                     <span className="font-semibold tabular-nums">{item.bid_notice_no}</span>
+                    {expired && <span className={EXPIRED_BADGE}>만료됨</span>}
                     {changed
                       ? <span className="rounded-full bg-[#1c348f] px-2 py-0.5 text-[12px] font-bold text-white">변경공고 v{item.baseline_version_number} → v{item.current_version_number}</span>
                       : <span className="rounded-full border border-[var(--product-line)] px-2 py-0.5 text-[12px] font-semibold">v{item.current_version_number}</span>}
                   </span>
                   <strong className="line-clamp-2 text-[17px] leading-6 text-[var(--product-ink)]">{item.notice_title || item.title}</strong>
-                  <span className="mt-auto text-[13px] text-[var(--product-muted)]">최근 변경 {new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}</span>
+                  <span className="mt-auto text-[13px] text-[var(--product-muted)]">
+                    {expired && item.bid_closed_at
+                      ? `입찰 마감 ${new Date(item.bid_closed_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}`
+                      : `최근 변경 ${new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}`}
+                  </span>
                 </NavigationLink>
+                {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
+                {expired && <DeleteExpiredCase caseId={item.id} onDeleted={onChanged} className="absolute bottom-4 left-5 right-5" />}
               </li>
             );
           })}
@@ -555,6 +615,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const analyzedCount = 'requirements' in current && Array.isArray(current.requirements) ? current.requirements.length : current.requirement_count;
       const analysisIncomplete = current.status !== 'SUCCEEDED';
       setMessageTone(analysisIncomplete ? 'warn' : 'ok');
+      membershipUsage.refresh();   // 이번 달에 확인한 공고 수가 늘었을 수 있다
       setMessage(analysisIncomplete
         ? `자격조건 ${analyzedCount}건을 판정했습니다. 첨부 일부를 읽지 못해 빠진 조건이 있을 수 있습니다.`
         : `자격조건 ${analyzedCount}건을 분석하고 판정했습니다.`);
@@ -934,7 +995,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
     </output>
   </main>;
-  if (!requestedCaseId && cases.length > 1) return <CaseGrid cases={cases} />;
+  if (!requestedCaseId && cases.length > 1) return <CaseGrid cases={cases} onChanged={() => void initialize()} />;
   if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12">
     <ActionCard caseId={requestedCaseId} />
     <p role="alert">{error || '검토 건을 찾을 수 없습니다.'}</p>
@@ -945,9 +1006,11 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   // Display verified notice metadata immediately; never render a provisional decision.
   const caseHeader = activeCase ? (
       <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-        <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2">{activeCase.expired && <span className={EXPIRED_BADGE}>만료됨</span>}<Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
         {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
         <div className="flex flex-wrap items-center gap-2">
+          <NoticeCheckQuota />
+          {activeCase.expired && <DeleteExpiredCase caseId={activeCase.id} onDeleted={() => router.replace('/qualification')} />}
           {cases.length > 1 && <NavigationLink href="/qualification" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
           <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>

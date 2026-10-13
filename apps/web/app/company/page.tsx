@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 
+import { ProcurementLookup } from '@/components/product/procurement-lookup';
 import { ProfileRecordsManager } from '@/components/product/profile-records-manager';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   type CompanyProfile,
   type CompanySize,
   type MasterCode,
+  type ProcurementCompany,
 } from '@/lib/qualification-api';
 
 type Busy = 'load' | 'create' | 'industry' | 'basics' | null;
@@ -138,6 +140,9 @@ export default function CompanyPage() {
     staff_total: '8',
     developer_count: '5',
   });
+
+  // 회사를 처음 만들 때 조달청에서 불러온 업종. 있으면 아래에서 고른 업종 대신 이 목록으로 만든다.
+  const [lookedUpIndustries, setLookedUpIndustries] = useState<Array<{ code: string; name: string }>>([]);
 
   const company = useMemo(
     () => companies.find((item) => item.id === selectedId) ?? companies[0] ?? null,
@@ -250,6 +255,45 @@ export default function CompanyPage() {
     }
   }
 
+  /** 조달청 조회 결과를 저장된 프로필에 반영한다. 업종은 더하기만 하고, 소재지는 조회한 시·도로 바꾼다. */
+  async function applyProcurement(found: ProcurementCompany) {
+    if (!company) return '';
+    const payload: Partial<CompanyCreatePayload> = {};
+    const added = found.industries.filter((item) => item.registrable && !savedIndustries.some((row) => row.code === item.code));
+    if (added.length) payload.industry_codes = [...savedIndustries.map((item) => item.code), ...added.map((item) => item.code)];
+    const region = found.region_code ? regionByCode(found.region_code) : undefined;
+    const regionChanged = Boolean(region) && (region?.code !== company.region_code || region?.name !== company.region_name);
+    if (region && regionChanged) {
+      payload.region_code = region.code;
+      payload.region_name = region.name;
+    }
+    if (!company.business_registration_number) payload.business_registration_number = found.business_registration_number;
+    if (!Object.keys(payload).length) return '조달청 정보와 프로필이 이미 같습니다. 바꾼 것이 없습니다.';
+    await updateCompany(company.id, payload);
+    setCompanies(await listCompanies());
+    setIndustryDraft(null);
+    setBasicsDraft(null);
+    const parts = [
+      added.length ? `업종 ${added.length}개 추가` : '',
+      region && regionChanged ? `소재지 ${region.name}` : '',
+    ].filter(Boolean);
+    return `프로필에 반영했습니다${parts.length ? ` — ${parts.join(', ')}` : ''}. 기업 구분·인력·실적·인증은 직접 확인해 주세요.`;
+  }
+
+  /** 회사를 처음 만들 때: 조회 결과로 입력란을 채운다. 저장은 「회사 프로필 만들기」를 눌러야 된다. */
+  function fillCreateForm(found: ProcurementCompany) {
+    const region = found.region_code ? regionByCode(found.region_code) : undefined;
+    setForm((current) => ({
+      ...current,
+      name: found.name ?? current.name,
+      business_registration_number: found.business_registration_number,
+      ...(region ? { region_code: region.code, region_name: region.name } : {}),
+    }));
+    const industries = found.industries.filter((item) => item.registrable).map(({ code, name }) => ({ code, name }));
+    setLookedUpIndustries(industries);
+    return `입력란을 채웠습니다${industries.length ? ` — 업종 ${industries.length}개` : ''}. 확인한 뒤 「회사 프로필 만들기」를 눌러 주세요.`;
+  }
+
   async function initialize() {
     if (!cachedGet<CompanyProfile[]>('/api/v1/companies')) setBusy('load');
     setError('');
@@ -295,7 +339,8 @@ export default function CompanyPage() {
   }
 
   async function submitCompany() {
-    if (!selectedIndustry) {
+    const industryCodes = lookedUpIndustries.length ? lookedUpIndustries.map((item) => item.code) : selectedIndustry ? [selectedIndustry] : [];
+    if (!industryCodes.length) {
       setError('업종 코드를 선택해주세요.');
       return;
     }
@@ -308,7 +353,7 @@ export default function CompanyPage() {
         region_code: form.region_code,
         region_name: form.region_name || undefined,
         company_size: form.company_size,
-        industry_codes: [selectedIndustry],
+        industry_codes: industryCodes,
         staff: {
           total_count: Number(form.staff_total || 0),
           verified: false,
@@ -360,6 +405,11 @@ export default function CompanyPage() {
                 업종, 지역, 기업 규모, 인력 정보를 먼저 저장하면 공고 참가자격 판정에서 실제 비교값으로 사용합니다.
               </p>
 
+              <div className="mt-8">
+                <ProcurementLookup applyLabel="입력란에 채우기" disabled={busy !== null} onApply={fillCreateForm}
+                  applyHint="회사명·사업자등록번호·소재지·업종을 아래 입력란에 채웁니다. 기업 구분과 인원은 직접 넣어 주세요." />
+              </div>
+
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
                 <label className="text-sm font-medium" htmlFor="company-name">회사명<Input id="company-name" className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
                 <label className="text-sm font-medium" htmlFor="company-brn">사업자등록번호<Input id="company-brn" className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
@@ -379,6 +429,13 @@ export default function CompanyPage() {
 
               <div className="mt-6">
                 <span className="text-sm font-medium">업종</span>
+                {lookedUpIndustries.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--product-tint)] px-3 py-2 text-[13px]">
+                    <span className="font-semibold">조달청 등록 업종으로 만듭니다</span>
+                    {lookedUpIndustries.map((item) => <span key={item.code} className="rounded-full border border-[var(--product-line)] bg-white px-2.5 py-0.5"><strong>{item.code}</strong> {item.name}</span>)}
+                    <button type="button" className="ml-auto underline" onClick={() => setLookedUpIndustries([])}>직접 고르기</button>
+                  </div>
+                )}
                 <div className="mt-2 flex gap-2">
                   <Input value={industryQuery} onChange={(event) => setIndustryQuery(event.target.value)} placeholder="업종명 또는 코드 검색" />
                   <Button variant="outline" onClick={() => void searchIndustries()}><Search />검색</Button>
@@ -424,6 +481,11 @@ export default function CompanyPage() {
                 </div>
               </div>
             </section>
+
+            <div className="mt-5">
+              <ProcurementLookup key={company.id} savedNumber={company.business_registration_number} disabled={busy !== null} onApply={applyProcurement}
+                applyHint="업종은 지금 프로필에 더하기만 하고(지우지 않음), 소재지는 조회한 시·도로 바꿉니다. 회사명·기업 구분·인력·실적·인증은 건드리지 않습니다." />
+            </div>
 
             {missingRows.length > 0 && (
               <section className="mt-5 rounded-[22px] border border-[#e2d9a9] bg-[#fffaf0] p-6">

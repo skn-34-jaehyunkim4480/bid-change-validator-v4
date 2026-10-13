@@ -150,6 +150,9 @@ export type PreflightCase = {
   status: string;
   baseline_version_number: number | null;
   current_version_number: number;
+  /** 현재 차수의 입찰서 제출 마감. expired 는 그 마감이 지났다는 뜻이다. */
+  bid_closed_at?: string | null;
+  expired?: boolean;
   documents: ProposalDocument[];
   created_at: string;
   updated_at: string;
@@ -211,6 +214,16 @@ export function findPreflightCasesByNotice(noticeId: string, companyId: string) 
 
 export function getPreflightCase(caseId: string) {
   return apiRequest<PreflightCase>(`/api/v1/preflight-cases/${caseId}`);
+}
+
+/** 마감이 지난 공고의 검토 건을 지운다. 서버는 마감 전인 건을 거절한다. */
+export async function deleteExpiredPreflightCase(caseId: string) {
+  const response = await apiFetch(`/api/v1/preflight-cases/${caseId}`, { method: 'DELETE', credentials: 'include' });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(payload?.error?.message ?? `요청에 실패했습니다. (${response.status})`, response.status, payload?.error?.code ?? 'HTTP_ERROR');
+  }
+  invalidateSharedData();
 }
 
 export function createPreflightCase(payload: {

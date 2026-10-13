@@ -64,18 +64,27 @@ def test_free_plan_checks_three_notices_a_month_and_rechecks_are_free(limits_on,
     assert details == {"kind": "NOTICE_CHECK", "plan": "FREE", "used": 3, "limit": 3}
     # 이미 확인한 공고를 다시 검토하는 것은 한도와 무관하고, 다시 세지도 않는다.
     _check(db, user, notices[0])
-    assert membership.usage_counts(db, user)["notice_checks"] == 3
+    assert membership.notice_checks_used(db, user) == 3
 
 
-def test_free_plan_asks_six_copilot_questions_a_month(limits_on, db) -> None:
+def test_free_plan_asks_six_copilot_questions_in_each_notice_conversation(limits_on, db) -> None:
     user = db.make_user()
-    case = uuid4()
+    case, other_case = uuid4(), uuid4()
     for _ in range(6):
         membership.consume_copilot_question(db, user, case)
     db.commit()
     details = _blocked(lambda: membership.consume_copilot_question(db, user, case))
     assert details == {"kind": "COPILOT_QUESTION", "plan": "FREE", "used": 6, "limit": 6}
-    assert membership.usage_counts(db, user)["copilot_questions"] == 6      # 막힌 질문은 세지 않는다
+    assert membership.copilot_questions_used(db, user, case) == 6            # 막힌 질문은 세지 않는다
+    # 다른 공고의 대화는 자기 횟수를 따로 쓴다.
+    membership.consume_copilot_question(db, user, other_case)
+    db.commit()
+    assert membership.membership_state(db, user, other_case)["used"]["copilot_questions"] == 1
+    assert membership.membership_state(db, user)["used"]["copilot_questions"] is None
+    # 달이 바뀌어도 그 공고 대화에서 쓴 횟수는 그대로다.
+    db.query(MembershipUsage).filter(MembershipUsage.user_id == user.id).update({"period": "2000-01"})
+    db.commit()
+    _blocked(lambda: membership.consume_copilot_question(db, user, case))
 
 
 def test_usage_is_counted_per_account_and_per_month(limits_on, db) -> None:
@@ -83,11 +92,11 @@ def test_usage_is_counted_per_account_and_per_month(limits_on, db) -> None:
     for _ in range(3):
         _check(db, user, uuid4())
     _check(db, other, uuid4())                                              # 다른 계정은 자기 한도를 쓴다
-    assert membership.usage_counts(db, other)["notice_checks"] == 1
+    assert membership.notice_checks_used(db, other) == 1
     # 지난달에 쓴 것은 이번 달 한도에 들지 않는다.
     db.query(MembershipUsage).filter(MembershipUsage.user_id == user.id).update({"period": "2000-01"})
     db.commit()
-    assert membership.usage_counts(db, user)["notice_checks"] == 0
+    assert membership.notice_checks_used(db, user) == 0
     _check(db, user, uuid4())
     assert membership.current_period(datetime(2026, 10, 31, 15, 30, tzinfo=timezone.utc)) == "2026-11"   # 한국 시간 기준
 
@@ -97,7 +106,8 @@ def test_system_admin_and_environments_without_limits_are_not_counted(limits_on,
     for _ in range(5):
         _check(db, admin, uuid4())
         membership.consume_copilot_question(db, admin, uuid4())
-    assert membership.usage_counts(db, admin) == {"notice_checks": 0, "copilot_questions": 0}
+    assert membership.notice_checks_used(db, admin) == 0
+    assert db.query(MembershipUsage).filter(MembershipUsage.user_id == admin.id).count() == 0
     assert membership.membership_state(db, admin)["limited"] is False
     membership.ensure_notice_check_allowed(db, None, uuid4())               # 로그인 없이 쓰는 개발 환경
 
@@ -105,7 +115,7 @@ def test_system_admin_and_environments_without_limits_are_not_counted(limits_on,
     monkeypatch.setattr(membership, "get_settings", lambda: SimpleNamespace(membership_limits_enabled=False, membership_demo_code="1234"))
     for _ in range(5):
         _check(db, user, uuid4())
-    assert membership.usage_counts(db, user)["notice_checks"] == 0          # 한도를 켜지 않은 환경에서는 세지도 않는다
+    assert membership.notice_checks_used(db, user) == 0                     # 한도를 켜지 않은 환경에서는 세지도 않는다
 
 
 def test_membership_code_opens_the_basic_plan_for_a_month(limits_on, db) -> None:
