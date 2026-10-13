@@ -1,4 +1,4 @@
-﻿# PR B — CPU BM25 + E5-small retrieval smoke (stacked on PR A)
+# PR B — CPU BM25 + E5-small retrieval smoke (stacked on PR A)
 
 This is an **offline retrieval diagnostic**, not a model rollout. It runs the pretrained `intfloat/multilingual-e5-small` on CPU, with explicit `query:` and `passage:` prompts, normalized embeddings, and `max_seq_length=256`. BM25 includes Korean character bigrams; BM25 and E5 independently score the **full 383-version frozen snapshot**, without either retriever prefiltering the other. RRF is applied to their independent Top 100 lists. No model weights, source notices, label data or results are committed.
 
@@ -33,3 +33,21 @@ Model inference uses `local_files_only=True` so subsequent comparisons don't sil
 The BM25 timing difference is run-to-run variance/warm cache and **not a speedup claim**; E5 model loading is not timed. The query overlap difference indicates retrieval diversity, **not relevance improvement**. The second mode contains biased/unverified snippets and must not be used as model quality evidence.
 
 **nDCG@10, judged Recall@50, MRR: NOT RUN (no independent full-task relevance labels).** The next phase must independently review version-hashed task excerpts and create a leakage-safe test set as defined in PR A. Only then decide between baseline BM25, CPU E5, and RRF. Do not automatically select or deploy E5 based on these measurements; BGE-M3/Qwen3/Reranker remain optional.
+
+## Additional retrospective GPT Teacher pilot — **not production accuracy**
+
+For an honest early signal only, we ranked the *original* PR #73 title-based GPT-6 Teacher test portion with an independently pretrained zero-shot E5-small model. This dataset has **2 synthetic companies, 20 company–notice judgments, only 10 candidates per company** and no source-bound business task bodies; strict temporal holdout was already unsuccessful. Results are therefore highly unstable and cannot approve deployment or qualify as a new independent full-task holdout.
+
+| Retrospective title-only test | nDCG@10 |
+|---|---:|
+| BM25 (new Korean bigram baseline) | **0.765489** |
+| Pretrained multilingual-E5-small, zero-shot | **0.930040** |
+| Earlier LightGBM experiment | 0.860709 (prior report; verify exact pipeline settings before controlled comparisons) |
+
+This is *promising but inconclusive*; retrieval can look superior on 2 synthetic firms by chance or benchmark design. The previous PR's `BM25=0.778744` used a different tokenization pipeline and should **not** be directly compared with the new BM25 number as if identical. Do not promote E5 on these figures.
+
+```powershell
+py -m app.ml_recommendations.title_only_teacher_pilot `
+  --pairs ..\gpt-teacher-private-20261013\dataset\pairs.jsonl `
+  --out ..\ml-relevance-audit-private-20261013\teacher_pilot_result.json
+```
