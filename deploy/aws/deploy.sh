@@ -4,9 +4,6 @@ umask 077
 
 SHA="${1:?Usage: deploy.sh <immutable-git-sha>}"
 cd /opt/bidcheck
-# Keep the optional, read-only retrieval mount path available even before the
-# private artifacts are provisioned. The feature flag stays false by default.
-install -d -m 0700 /opt/bidcheck/ml-experimental-artifacts
 RHWP_BIN=/opt/bidcheck/rhwp-pr8-20261013/rhwp
 test -x "$RHWP_BIN"
 printf '%s  %s\n' '435209cc31429e89f894cd4a639c7506611c6a4eea158842d2fbffe44ad057f5' "$RHWP_BIN" | sha256sum --check --status
