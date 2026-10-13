@@ -2,13 +2,14 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { CASE_SORT_OPTIONS, filterCases, sortCases, type CaseSort } from '@/lib/case-list';
 import { forgetCase, lastCaseId, rememberCase } from '@/lib/last-case';
 import { AUTOSTART_PARAM } from '@/lib/open-judgment';
 import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
@@ -260,9 +261,13 @@ const EXPIRED_BADGE = 'rounded-full bg-[#5b6170] px-2 py-0.5 text-[12px] font-bo
 /** 검토 중인 공고를 3×3 카드로 보여 주고, 아홉 건을 넘으면 다음 쪽으로 넘긴다. */
 function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () => void }) {
   const [page, setPage] = useState(0);
-  const pageCount = Math.max(1, Math.ceil(cases.length / CASES_PER_PAGE));
+  // 목록 안 검색과 정렬(2026-10-14). 글자를 치는 대로 걸러지고, Enter 를 누르면 첫 쪽으로 간다.
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<CaseSort>('recent');
+  const listed = useMemo(() => sortCases(filterCases(cases, query), sort), [cases, query, sort]);
+  const pageCount = Math.max(1, Math.ceil(listed.length / CASES_PER_PAGE));
   const current = Math.min(page, pageCount - 1);
-  const shown = cases.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
+  const shown = listed.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
@@ -270,13 +275,34 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
           <div>
             <h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">검토 중인 공고 {cases.length}건</h2>
-            <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 최근에 다룬 순서입니다.</p>
+            <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 아래에서 찾거나 순서를 바꿀 수 있습니다.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <NoticeCheckQuota />
             <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
           </div>
         </div>
+        <form className="mt-5 flex flex-wrap items-center gap-2" aria-label="검토 중인 공고 안에서 찾기"
+          onSubmit={(event) => { event.preventDefault(); setPage(0); }}>
+          <label className="sr-only" htmlFor="case-search">검토 중인 공고 안에서 찾기</label>
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)] sm:max-w-[420px]">
+            <Search className="size-4 shrink-0 text-[var(--product-muted)]" aria-hidden="true" />
+            <input id="case-search" type="search" value={query} placeholder="공고번호 · 공고명으로 찾기"
+              className="h-full min-w-0 flex-1 bg-transparent text-[14px] outline-none"
+              onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
+          </div>
+          <label className="sr-only" htmlFor="case-sort">정렬</label>
+          <select id="case-sort" value={sort} className="h-10 rounded-full border border-[var(--product-line)] bg-white px-4 text-[14px]"
+            onChange={(event) => { setSort(event.target.value as CaseSort); setPage(0); }}>
+            {CASE_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          {query.trim() && <span className="text-[13px] tabular-nums text-[var(--product-muted)]" aria-live="polite">{listed.length}건 찾음</span>}
+        </form>
+        {listed.length === 0 && (
+          <p className="mt-6 rounded-[18px] border border-dashed border-[var(--product-line)] px-6 py-10 text-center text-[14px] text-[var(--product-muted)]">
+            「{query.trim()}」에 맞는 검토 건이 없습니다. 낱말을 줄이거나 공고번호로 찾아 보세요.
+          </p>
+        )}
         <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="검토 중인 공고">
           {shown.map((item) => {
             const changed = item.baseline_version_number != null && item.baseline_version_number !== item.current_version_number;

@@ -325,9 +325,9 @@ export function updateCompany(companyId: string, payload: Partial<CompanyCreateP
 }
 
 export function searchIndustryCodes(query = '') {
-  const search = new URLSearchParams({ limit: '20' });
+  const search = new URLSearchParams({ limit: '50' });
   if (query.trim()) search.set('q', query.trim());
-  return request<{ items: MasterCode[] }>(`/api/v1/master-codes/industries?${search}`);
+  return request<{ items: MasterCode[]; total: number }>(`/api/v1/master-codes/industries?${search}`);
 }
 
 export function createCompanyCertification(
