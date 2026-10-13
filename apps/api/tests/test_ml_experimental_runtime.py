@@ -98,10 +98,11 @@ def test_corrupted_artifact_uses_live_title_fallback(tmp_path, monkeypatch):
     import app.ml_recommendations.router as m
     monkeypatch.setenv("ML_EXPERIMENTAL_ENABLED", "true")
     monkeypatch.setenv("ML_EXPERIMENTAL_ARTIFACT_DIR", str(tmp_path / "missing"))
-    monkeypatch.setattr(m, "candidates", lambda db: [
-        {"notice_version_id":"v3","notice_id":"n3","title":"solar equipment"}])
-    monkeypatch.setattr(m, "_valid_experimental_version_map",
-                        lambda db, valid: {"v3": valid[0]})
+    monkeypatch.setattr(m, "candidates", lambda db, **kw: [
+        {"notice_version_id":"v3","notice_id":"n3","title":"solar equipment","version_number":1}])
+    monkeypatch.setattr(m, "experimental_live_candidate_map",
+                        lambda db: {"v3": {"notice_id":"n3", "title":"solar equipment",
+                                           "version_number":1}})
     monkeypatch.setattr(m, "partition_ranked", lambda *a, **k: ([], []))
     res = recommend_experimental(ExperimentalRecommendationRequest(query="solar panel"),
                                  db=object(), user=None)
@@ -116,11 +117,12 @@ def test_experimental_api_happy_path_uses_live_version_only(monkeypatch, tmp_pat
     docs, vectors = artifacts(tmp_path)
     monkeypatch.setenv("ML_EXPERIMENTAL_ENABLED", "true")
     monkeypatch.setenv("ML_EXPERIMENTAL_ARTIFACT_DIR", str(tmp_path))
-    monkeypatch.setattr(m, "candidates", lambda db: [
+    monkeypatch.setattr(m, "candidates", lambda db, **kw: [
         {"notice_id": "n1", "title": "solar panel", "version_number": 1,
          "is_stale": False, "analysis_run_id": None, "analysis_status": "UNKNOWN"}])
-    monkeypatch.setattr(m, "_valid_experimental_version_map",
-                        lambda db, valid: {"v1": valid[0]})
+    monkeypatch.setattr(m, "experimental_live_candidate_map",
+                        lambda db: {"v1": {"notice_id":"n1", "title":"solar panel",
+                                           "version_number":1}})
     observed = []
     def partition(db, company_id, ranked, limit, source, query):
         observed.extend(ranked)
@@ -149,11 +151,12 @@ def test_changed_source_sha_discards_stale_vector(monkeypatch, tmp_path):
     read_artifacts.cache_clear()
     monkeypatch.setenv("ML_EXPERIMENTAL_ENABLED", "true")
     monkeypatch.setenv("ML_EXPERIMENTAL_ARTIFACT_DIR", str(tmp_path))
-    monkeypatch.setattr(m, "candidates", lambda db: [
+    monkeypatch.setattr(m, "candidates", lambda db, **kw: [
         {"notice_id": "n1", "title": "solar panel", "version_number": 1,
          "is_stale": False, "analysis_run_id": None, "analysis_status": "UNKNOWN"}])
-    monkeypatch.setattr(m, "_valid_experimental_version_map",
-                        lambda db, valid: {"v1": valid[0]})
+    monkeypatch.setattr(m, "experimental_live_candidate_map",
+                        lambda db: {"v1": {"notice_id":"n1", "title":"solar panel",
+                                           "version_number":1}})
     monkeypatch.setattr(m, "partition_ranked", lambda *a, **k: ([], []))
     class DummyDB:
         def execute(self, stmt):
@@ -221,3 +224,60 @@ def test_experimental_route_registered_with_main_app():
     assert "/api/v1/recommendations/ml" in api["paths"]
     assert "/api/v1/recommendations/ml-experimental" in api["paths"]
     assert "post" in api["paths"]["/api/v1/recommendations/ml-experimental"]
+
+
+
+def test_fast_api_enriches_only_ranked_notices(monkeypatch, tmp_path):
+    import app.ml_recommendations.router as m
+    artifacts(tmp_path)
+    monkeypatch.setenv("ML_EXPERIMENTAL_ENABLED", "true")
+    monkeypatch.setenv("ML_EXPERIMENTAL_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(m, "experimental_live_candidate_map",
+        lambda db: {"v1":{"notice_id":"n1","title":"solar panel","version_number":1},
+                    "v2":{"notice_id":"n2","title":"hospital cleaning","version_number":1},
+                    "v3":{"notice_id":"n3","title":"unindexed","version_number":1}})
+    calls=[]
+    def selected_rows(db, *, notice_ids=None, **kwargs):
+        calls.append(notice_ids)
+        return [{"notice_id":n,"title": {"n1":"solar panel","n2":"hospital cleaning","n3":"unindexed"}[n],
+                 "version_number":1, "is_stale":False,"analysis_run_id":None,"analysis_status":"UNKNOWN"}
+                for n in sorted(notice_ids)]
+    monkeypatch.setattr(m,"candidates",selected_rows)
+    monkeypatch.setattr(m, "partition_ranked", lambda *a,**k:([],[]))
+    result=m.recommend_experimental(
+        m.ExperimentalRecommendationRequest(query="solar panel",mode="hybrid_rrf",limit=5),
+        db=object(),user=None)
+    assert result.valid_live_candidates==3
+    assert result.live_title_fallback_candidates==1
+    assert len(calls)==1 and calls[0]=={"n1","n2","n3"}
+
+
+def test_fast_api_discards_changed_title_during_rich_enrichment(monkeypatch,tmp_path):
+    import app.ml_recommendations.router as m
+    artifacts(tmp_path)
+    monkeypatch.setenv("ML_EXPERIMENTAL_ENABLED", "true")
+    monkeypatch.setenv("ML_EXPERIMENTAL_ARTIFACT_DIR",str(tmp_path))
+    monkeypatch.setattr(m,"experimental_live_candidate_map",
+        lambda db:{"v1":{"notice_id":"n1","title":"solar panel","version_number":1}})
+    monkeypatch.setattr(m,"candidates",lambda db,**kw:[
+       {"notice_id":"n1","title":"changed title","version_number":2,
+        "is_stale":False,"analysis_run_id":None,"analysis_status":"UNKNOWN"}])
+    observed=[]
+    monkeypatch.setattr(m,"partition_ranked",
+                        lambda db,cid,rows,limit,source,query:(observed.extend(rows) or [],[]))
+    result=m.recommend_experimental(
+        m.ExperimentalRecommendationRequest(query="solar panel",mode="bm25"),
+        db=object(),user=None)
+    assert observed==[]
+    assert result.valid_live_candidates==1
+
+
+def test_enrichment_shortcut_empty_notice_ids():
+    from app.ml_recommendations.router import candidates
+    assert candidates(object(),notice_ids=set()) == []
+
+
+def test_enrichment_refuses_more_than_100_notices():
+    from app.ml_recommendations.router import candidates
+    with pytest.raises(ValueError,match="capped at 100"):
+        candidates(object(),notice_ids={f"n{i}" for i in range(101)})
