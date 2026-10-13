@@ -8,6 +8,8 @@ import { JudgmentLinkButton } from '@/components/product/judgment-link-button';
 import { Button } from '@/components/ui/button';
 import { useAppUser } from '@/components/app-user-context';
 import { listCompanies } from '@/lib/qualification-api';
+import { listIndustryExperimentalRecommendations } from '@/lib/ml-experimental-api';
+import type { MlExperimentalResponse } from '@/lib/ml-experimental-schema';
 import { listNoticeMatches, type NoticeMatch } from '@/lib/notice-matching-api';
 import {
   listMlRecommendations, usesTrainedModel,
@@ -17,6 +19,7 @@ import {
 type RecommendationState = {
   loading: boolean;
   companyName: string | null;
+  companyId: string | null;
   matches: NoticeMatch[];
   ml: MlRecommendationResponse | null;
   mlError: string | null;
@@ -25,7 +28,7 @@ type RecommendationState = {
 };
 
 const INITIAL: RecommendationState = {
-  loading: true, companyName: null, matches: [], ml: null,
+  loading: true, companyName: null, companyId: null, matches: [], ml: null,
   mlError: null, matchingError: null, error: null,
 };
 
@@ -58,6 +61,9 @@ export default function RecommendationsPage() {
   const user = useAppUser();
   const [state, setState] = useState<RecommendationState>(() => sharedQueryClient().getQueryData<RecommendationState>(['view', 'recommendations']) ?? INITIAL);
   const [attempt, setAttempt] = useState(0);
+  const [experimental, setExperimental] = useState<{
+    loading: boolean; companyId: string | null; data: MlExperimentalResponse | null; error: string | null;
+  }>({ loading: false, companyId: null, data: null, error: null });
 
   useEffect(() => {
     let active = true;
@@ -72,13 +78,14 @@ export default function RecommendationsPage() {
           setState({ ...INITIAL, loading: false, error: '조회할 회사 프로필이 없습니다. 먼저 회사 프로필을 확인해 주세요.' });
           return;
         }
+        setExperimental({ loading: false, companyId: null, data: null, error: null });
         const [matches, ml] = await Promise.allSettled([
           listNoticeMatches(company.id, 50),
           listMlRecommendations(company.id),
         ]);
         if (!active) return;
         const next: RecommendationState = {
-          loading: false, companyName: company.name,
+          loading: false, companyName: company.name, companyId: company.id,
           matches: matches.status === 'fulfilled' ? matches.value.items : [],
           ml: ml.status === 'fulfilled' ? ml.value : null,
           mlError: ml.status === 'rejected' ? describeFailure(ml.reason) : null,
@@ -97,8 +104,23 @@ export default function RecommendationsPage() {
 
   function retry() {
     invalidateSharedData();
+    setExperimental({ loading: false, companyId: null, data: null, error: null });
     setState(INITIAL);
     setAttempt((value) => value + 1);
+  }
+
+  async function runIndustryExperiment() {
+    const companyId = state.companyId;
+    if (!companyId) return;
+    setExperimental({ loading: true, companyId, data: null, error: null });
+    try {
+      const data = await listIndustryExperimentalRecommendations(companyId);
+      setExperimental((previous) => previous.companyId === companyId
+        ? { loading: false, companyId, data, error: null } : previous);
+    } catch (error) {
+      setExperimental((previous) => previous.companyId === companyId
+        ? { loading: false, companyId, data: null, error: describeFailure(error) } : previous);
+    }
   }
 
   const trained = state.ml ? usesTrainedModel(state.ml) : false;
@@ -209,6 +231,67 @@ export default function RecommendationsPage() {
                 )}
               </>
             ) : null}
+          </section>
+          <section aria-labelledby="ml-experiment-heading" className="mt-8 rounded-2xl border bg-white p-5 shadow-sm sm:p-7">
+            <h2 id="ml-experiment-heading" className="text-lg font-bold">업종 기반 개선 검색 · 실험</h2>
+            <p className="mt-2 text-sm leading-7 text-[var(--product-muted)]">
+              기존 추천과 독립적으로 업종·과업 용어를 사용해 BM25 검색합니다.
+              검색 점수는 적격·낙찰 확률이 아니며, 독립 검수된 추천 정확도도 아닙니다.
+              유료 AI 분석은 실행하지 않습니다.
+            </p>
+            <Button type="button" className="mt-4" variant="outline"
+              disabled={state.loading || experimental.loading || !state.companyId}
+              onClick={() => { void runIndustryExperiment(); }}>
+              {experimental.loading ? '실험 검색 중...' : '업종 기반 BM25 검색 실행'}
+            </Button>
+            {experimental.companyId === state.companyId && experimental.error && (
+              <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                {experimental.error}
+              </p>
+            )}
+            {experimental.companyId === state.companyId && experimental.data && (
+              <div className="mt-5 space-y-5" aria-live="polite">
+                <p className="text-xs leading-6 text-slate-600">
+                  전략: {experimental.data.query_strategy_used} · 실제 방식: {experimental.data.mode_used}
+                  {' · '}유효 후보 {experimental.data.valid_live_candidates}건
+                  {' · '}벡터 보유 {experimental.data.indexed_live_candidates}건
+                  {' · '}제목 대체 {experimental.data.live_title_fallback_candidates}건
+                  {experimental.data.fallback_reason ? ' · 대체 사유: ' + experimental.data.fallback_reason : ''}
+                </p>
+                {[
+                  { label: '핵심 요건 충족 확인', rows: experimental.data.items },
+                  { label: '관련 공고 · 자격 확인 필요', rows: experimental.data.needs_review_items },
+                ].map((group) => (
+                  <div key={group.label}>
+                    <h3 className="text-sm font-semibold">{group.label} ({group.rows.length}건)</h3>
+                    {group.rows.length === 0 ? (
+                      <p className="mt-2 text-xs text-slate-600">해당 결과가 없습니다.</p>
+                    ) : (
+                      <ul className="mt-2 divide-y rounded-xl border px-4">
+                        {group.rows.map((item) => (
+                          <li key={item.notice_id} className="py-4 text-sm">
+                            <NavigationLink href={'/notices/' + encodeURIComponent(item.notice_id)}
+                              className="break-words font-semibold text-blue-700 underline">{item.title}</NavigationLink>
+                            <p className="mt-2 text-xs text-slate-600">
+                              {ML_QUALIFICATION_LABEL[item.qualification_state]}
+                              {' · '}공고 버전 {item.version_number}
+                              {' · '}검색 점수 {item.relevance_score.toFixed(3)}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-600">{item.reason}</p>
+                            {item.qualification_reason && (
+                              <p className="mt-1 text-xs text-slate-600">판정 근거: {item.qualification_reason}</p>
+                            )}
+                            <JudgmentLinkButton noticeId={item.notice_id} label="이 공고 판정 화면으로"
+                              className="mt-2 inline-flex text-xs font-semibold text-blue-700 underline disabled:opacity-60" />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-slate-600">자격 미확인은 적격으로 표시하지 않습니다. 제외된 부적격 공고도 있습니다.</p>
+              </div>
+            )}
           </section>
           {state.ml && (
             <section aria-labelledby="ml-review-heading" className="mt-8 rounded-2xl border bg-white p-5 shadow-sm sm:p-7">
