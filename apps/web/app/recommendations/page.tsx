@@ -18,6 +18,8 @@ import {
 
 type RecommendationState = {
   loading: boolean;
+  mlLoading: boolean;
+  matchingLoading: boolean;
   companyName: string | null;
   companyId: string | null;
   matches: NoticeMatch[];
@@ -28,7 +30,8 @@ type RecommendationState = {
 };
 
 const INITIAL: RecommendationState = {
-  loading: true, companyName: null, companyId: null, matches: [], ml: null,
+  loading: true, mlLoading: false, matchingLoading: false,
+  companyName: null, companyId: null, matches: [], ml: null,
   mlError: null, matchingError: null, error: null,
 };
 
@@ -65,6 +68,13 @@ export default function RecommendationsPage() {
     loading: boolean; companyId: string | null; data: MlExperimentalResponse | null; error: string | null;
   }>({ loading: false, companyId: null, data: null, error: null });
 
+  // Store independently resolved results for normal app navigation.
+  useEffect(() => {
+    if (!state.loading && state.companyId) {
+      sharedQueryClient().setQueryData(['view', 'recommendations'], state);
+    }
+  }, [state]);
+
   useEffect(() => {
     let active = true;
     async function load() {
@@ -79,21 +89,39 @@ export default function RecommendationsPage() {
           return;
         }
         setExperimental({ loading: false, companyId: null, data: null, error: null });
-        const [matches, ml] = await Promise.allSettled([
-          listNoticeMatches(company.id, 50),
-          listMlRecommendations(company.id),
-        ]);
-        if (!active) return;
-        const next: RecommendationState = {
-          loading: false, companyName: company.name, companyId: company.id,
-          matches: matches.status === 'fulfilled' ? matches.value.items : [],
-          ml: ml.status === 'fulfilled' ? ml.value : null,
-          mlError: ml.status === 'rejected' ? describeFailure(ml.reason) : null,
-          matchingError: matches.status === 'rejected' ? describeFailure(matches.reason) : null,
-          error: null,
-        };
-        sharedQueryClient().setQueryData(['view', 'recommendations'], next);
-        setState(next);
+        // Neither slow legacy /ml nor qualification matching blocks the search button.
+        setState({
+          ...INITIAL, loading: false, mlLoading: true, matchingLoading: true,
+          companyName: company.name, companyId: company.id,
+        });
+        void listNoticeMatches(company.id, 50).then(
+          (matches) => {
+            if (!active) return;
+            setState((previous) => previous.companyId === company.id
+              ? { ...previous, matches: matches.items, matchingLoading: false, matchingError: null }
+              : previous);
+          },
+          (error: unknown) => {
+            if (!active) return;
+            setState((previous) => previous.companyId === company.id
+              ? { ...previous, matches: [], matchingLoading: false, matchingError: describeFailure(error) }
+              : previous);
+          },
+        );
+        void listMlRecommendations(company.id).then(
+          (ml) => {
+            if (!active) return;
+            setState((previous) => previous.companyId === company.id
+              ? { ...previous, ml, mlLoading: false, mlError: null }
+              : previous);
+          },
+          (error: unknown) => {
+            if (!active) return;
+            setState((previous) => previous.companyId === company.id
+              ? { ...previous, ml: null, mlLoading: false, mlError: describeFailure(error) }
+              : previous);
+          },
+        );
       } catch (error) {
         if (active) setState({ ...INITIAL, loading: false, error: describeFailure(error) });
       }
@@ -167,7 +195,11 @@ export default function RecommendationsPage() {
               )}
             </div>
             <p className="mt-1 text-sm text-[var(--product-muted)]">조회 회사: {state.companyName}</p>
-            {state.mlError ? (
+            {state.mlLoading ? (
+              <p role="status" className="mt-5 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
+                기존 추천 계산 중입니다. 아래 업종 기반 실험 검색은 기다리지 않고 실행할 수 있습니다.
+              </p>
+            ) : state.mlError ? (
               <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 추천 조회에 실패했습니다: {state.mlError}
                 <Button type="button" variant="outline" size="sm" className="ml-3" onClick={retry}>다시 시도</Button>
@@ -330,7 +362,11 @@ export default function RecommendationsPage() {
               이미 저장된 분석 결과만 표시합니다. 이 화면에서 LLM 분석을 자동 실행하지 않습니다.
               최근 판정 결과 최대 50건으로 전체 공고의 적격 여부를 의미하지 않습니다.
             </p>
-            {state.matchingError ? (
+            {state.matchingLoading ? (
+              <p role="status" className="mt-4 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">
+                저장된 자격판정 결과를 불러오는 중입니다.
+              </p>
+            ) : state.matchingError ? (
               <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{state.matchingError}</p>
             ) : state.matches.length ? (
               <ul className="mt-4 divide-y">

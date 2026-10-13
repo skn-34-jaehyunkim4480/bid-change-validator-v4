@@ -255,6 +255,43 @@ test('server errors show an actionable retry instead of false success', async ({
   await expect(page.getByText('일시적으로 공고를 조회할 수 없습니다.')).toBeVisible();
   await expect(page.getByRole('button', { name: /다시 시도/ })).toBeEnabled();
 });
+test('experimental search is usable before slow legacy recommendation and match requests finish', async ({ page }) => {
+  await mockApi(page);
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-a', name: '진행 로딩 테스트 회사' }],
+  }));
+  let releaseSlow!: () => void;
+  const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+  await page.route('**/api/v1/recommendations/ml', async (route) => {
+    await slow;
+    return route.fulfill({ status: 503, json: { detail: 'Legacy backend delayed' } });
+  });
+  await page.route('**/api/v1/companies/company-a/notice-matches?*', async (route) => {
+    await slow;
+    return route.fulfill({ status: 200, json: { items: [], total: 0 } });
+  });
+  let experimentalCalls = 0;
+  await page.route('**/api/v1/recommendations/ml-experimental', (route) => {
+    experimentalCalls += 1;
+    expect(route.request().postDataJSON()).toMatchObject({
+      company_id: 'company-a', mode: 'bm25', query_strategy: 'industry_v1',
+    });
+    return route.fulfill({ status: 503, json: { detail: 'Disabled in test' } });
+  });
+  try {
+    await page.goto('/recommendations');
+    const search = page.getByRole('button', { name: '업종 기반 BM25 검색 실행' });
+    await expect(search).toBeEnabled({ timeout: 15_000 });
+    await expect(page.getByText('기존 추천 계산 중입니다.', { exact: false })).toBeVisible();
+    await expect(page.getByText('저장된 자격판정 결과를 불러오는 중입니다.')).toBeVisible();
+    await search.click();
+    await expect.poll(() => experimentalCalls).toBe(1);
+    await expect(page.locator('#ml-experiment-heading').locator('..').getByRole('alert')).toBeVisible();
+  } finally {
+    releaseSlow();
+  }
+});
+
 test('ML POST contract distinguishes learned rank from qualification (MOCK)', async ({ page }) => {
   await mockApi(page);
   await page.route('**/api/v1/companies', route => route.fulfill({
