@@ -63,3 +63,24 @@ python -m app.ml_recommendations.excerpt_teacher_pilot --annotations ..\ml-relev
 ### Remaining blockers
 
 Review 34 more excerpts, inspect alternate attachments, close external notice relation edges, verify full task scope including original-source integrity, and build independently judged positive/hard-negative company pairs with a real temporal/company holdout (at least 10 test firms x 30 independently reviewed pairs). Only then perform independent full valid-universe BM25 Top100/E5 Top100 retrieval and judge reranking. Do not promote this pilot to PR A full-task accuracy.
+## 2026-10-13 follow-up: successful targeted label persistence
+
+The previously blocked large-script label-writing step was replaced with an explicit private input file and a small, testable schema validator. No existing label or model output was overwritten.
+
+Saved privately outside Git: targeted_dev_seed.tsv, gpt6_reviewed_excerpt_pilot_v2/targeted_dev_pairs.jsonl, and targeted_dev_manifest.json. The input and output SHA256 hashes are recorded. Original 90-pair labels were preserved and duplicate company-version pair insertion is prohibited.
+
+NEW: 26 GPT-6 model-authored targeted development labels. Distribution: grade 0:6, grade 1:9, grade 2:11, grade 3:0. CUMULATIVE 116: grade 0:85, grade 1:15, grade 2:16, grade 3:0. The new 11 positives cover only 6 distinct notice versions and 9 synthetic firm profiles. The new grade-1 adjacent-domain examples are hard-negative *candidates* for model tuning, not independently measured generalization. Synthetic IT firms and some Wando marine-waste notices are near duplicates; do not count these as fully independent families.
+
+All new labels: label_source=gpt_teacher, annotation_basis=REVIEWED_SOURCE_EXCERPT, human_approved=false, split=targeted_development. The reviewed block excerpt is not a verified COMPLETE project scope. No Grade 3 was assigned because task-level proof is insufficient. These labels must NEVER be counted as untouched test judgments.
+
+Previous 15 reviewed candidate snippets: 13 DIRECT, 2 INDIRECT. Additional 34 reviewed snippets: 8 DIRECT, 6 INDIRECT, 20 INSUFFICIENT_SOURCE. Total: 21 direct, 8 indirect, 20 insufficient. SHA256 for the additional 34 review file and every cited cached selected-block file, indices and excerpt text were checked offline successfully.
+
+### Alternate AWS attachment inventory
+
+A bounded read-only RDS metadata query reviewed all 20 snippet-insufficient notice versions: 80 document rows, all 20 versions had two or more attachments. Some had alternate proposal/specification/project-specific description documents. Stored the metadata privately at alternate_attachment_metadata_20.json. A follow-up query for contents of eight selected documents was blocked by the execution safety check; therefore no alternate document block was promoted or fully reviewed.
+
+### Verification and outstanding gates
+
+The targeted_development_labels.py validator rejects duplicates and old-pair reuse, invalid original excerpt digests, unexpected human approval, and final-holdout claims. Related local suite: 47 passed (5 new). No paid API calls, AWS writes, production model deployment, PR merge or large-model evaluation.
+
+Next: source-block review of alternate attachments using an authorized read-only approach; close change/reannouncement families; then obtain independent task-verified labels and untouched temporal/company holdouts before ranking accuracy comparison.
