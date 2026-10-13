@@ -58,3 +58,7 @@ Run tests with:
 $env:PYTHONPATH=(Resolve-Path engine).Path+';'+(Resolve-Path apps/api).Path
 py -m pytest apps/api/tests/test_ml_relevance_eval_contract.py -q
 ```
+
+## AWS source audit correction (2026-10-13)
+
+The earlier frozen local Golden/snapshot intersection of zero was **not** evidence that AWS lacks relevant extracted source text. A subsequent bounded, read-only AWS RDS join of all 383 snapshot notice version IDs found **375 versions** with **1,308 EXTRACTED documents** (see AWS_RELEVANCE_AUDIT_20261013.md). Verified *business-task* snippets and independent review labels are still needed before evaluation.
