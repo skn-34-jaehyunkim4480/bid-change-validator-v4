@@ -414,10 +414,11 @@ export function getQualificationJudgment(runId: string) {
   return request<QualificationJudgmentRun>(`/api/v1/qualification-judgment-runs/${runId}`);
 }
 
-export function runQualificationJudgment(caseId: string, analysisRunId: string) {
+/** analysisRunId 를 주지 않으면 서버가 그 검토 건의 최신 분석으로 판정한다. */
+export function runQualificationJudgment(caseId: string, analysisRunId?: string) {
   return request<QualificationJudgmentRun>(`/api/v1/preflight-cases/${caseId}/qualification-judgments`, {
     method: 'POST',
-    body: JSON.stringify({ analysis_run_id: analysisRunId }),
+    body: JSON.stringify(analysisRunId ? { analysis_run_id: analysisRunId } : {}),
   });
 }
 

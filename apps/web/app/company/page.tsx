@@ -15,12 +15,15 @@ import {
 } from 'lucide-react';
 
 import { ProcurementLookup } from '@/components/product/procurement-lookup';
-import { ProfileRecordsManager } from '@/components/product/profile-records-manager';
+import { EMPTY_RECORDS_DRAFT, ProfileRecordsManager, recordsDraftCount, type RecordsDraft } from '@/components/product/profile-records-manager';
+import { NavigationLink } from '@/components/navigation-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { COMPANY_REGION_OPTIONS, regionByCode, selectedRegionCode } from '@/lib/company-regions';
-import { COMPANY_SIZE_LABEL, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
+import { rejudgeLastCase, type Rejudged } from '@/lib/last-case';
+import { createCertification, createPerformance, deleteCertification, deletePerformance, updateCertification, updatePerformance } from '@/lib/profile-records-api';
+import { COMPANY_SIZE_LABEL, OVERALL_STATUS_BADGE, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import {
   createCompany,
   listCompanies,
@@ -33,7 +36,7 @@ import {
   type ProcurementCompany,
 } from '@/lib/qualification-api';
 
-type Busy = 'load' | 'create' | 'industry' | 'basics' | null;
+type Busy = 'load' | 'create' | 'save' | null;
 
 type CompanyBasics = {
   region_code: string;
@@ -131,6 +134,12 @@ export default function CompanyPage() {
   const [industryDraft, setIndustryDraft] = useState<Array<{ code: string; name: string }> | null>(null);
   // 소재지·기업 구분·상시 근로자. 업종과 같은 규칙 — null이면 「서버 값 그대로」다.
   const [basicsDraft, setBasicsDraft] = useState<CompanyBasics | null>(null);
+  // 수행 실적·인증의 추가·삭제·증빙 표시도 초안이다. 「변경 사항 저장」 한 번에 함께 저장한다(2026-10-13).
+  const [recordsDraft, setRecordsDraft] = useState<RecordsDraft>(EMPTY_RECORDS_DRAFT);
+  // 조달청 조회로 받은 사업자등록번호(회사에 번호가 없을 때만). 저장할 때 함께 넣는다.
+  const [numberDraft, setNumberDraft] = useState<string | null>(null);
+  // 저장 뒤에 방금까지 보던 공고를 다시 판정한 결과.
+  const [saved, setSaved] = useState<{ rejudged: Rejudged | null } | null>(null);
   const [form, setForm] = useState({
     name: '',
     business_registration_number: '',
@@ -209,75 +218,93 @@ export default function CompanyPage() {
     return null;
   })();
 
-  async function saveBasics() {
-    if (!company || !basics || basicsBlock) return;
-    setBusy('basics');
-    setError('');
-    try {
-      const payload: Partial<CompanyCreatePayload> = { company_size: basics.company_size };
-      // Explicit selection sets both fields together. Unchanged legacy addresses stay untouched.
-      if (basics.region_code !== savedBasics?.region_code || basics.region_name !== savedBasics?.region_name) {
-        payload.region_code = basics.region_code;
-        payload.region_name = basics.region_name;
-      }
-      // 빈 칸이면 인력 정보를 건드리지 않는다. 0으로 덮으면 「0명임을 확인했다」가 되어 판정이 달라진다.
-      if (basics.staff_total.trim()) {
-        payload.staff = {
-          total_count: Number(basics.staff_total),
-          verified: company.staff?.verified ?? false,
-          roles: company.staff?.roles ?? [],
-        };
-      }
-      await updateCompany(company.id, payload);
-      const refreshed = await listCompanies();
-      setCompanies(refreshed);
-      setBasicsDraft(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '회사 정보 저장에 실패했습니다.');
-    } finally {
-      setBusy(null);
-    }
-  }
+  const dirtyCount = (industryDirty ? 1 : 0) + (basicsDirty ? 1 : 0) + (numberDraft ? 1 : 0) + recordsDraftCount(recordsDraft);
+  const saveBlock = (industryDirty ? industryBlock : null) ?? (basicsDirty ? basicsBlock : null);
 
-  async function saveIndustries() {
-    if (!company || industryBlock) return;
-    setBusy('industry');
-    setError('');
-    try {
-      await updateCompany(company.id, { industry_codes: industryList.map((item) => item.code) });
-      const refreshed = await listCompanies();
-      setCompanies(refreshed);
-      setIndustryDraft(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '업종 저장에 실패했습니다.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /** 조달청 조회 결과를 저장된 프로필에 반영한다. 업종은 더하기만 하고, 소재지는 조회한 시·도로 바꾼다. */
-  async function applyProcurement(found: ProcurementCompany) {
-    if (!company) return '';
-    const payload: Partial<CompanyCreatePayload> = {};
-    const added = found.industries.filter((item) => item.registrable && !savedIndustries.some((row) => row.code === item.code));
-    if (added.length) payload.industry_codes = [...savedIndustries.map((item) => item.code), ...added.map((item) => item.code)];
-    const region = found.region_code ? regionByCode(found.region_code) : undefined;
-    const regionChanged = Boolean(region) && (region?.code !== company.region_code || region?.name !== company.region_name);
-    if (region && regionChanged) {
-      payload.region_code = region.code;
-      payload.region_name = region.name;
-    }
-    if (!company.business_registration_number) payload.business_registration_number = found.business_registration_number;
-    if (!Object.keys(payload).length) return '조달청 정보와 프로필이 이미 같습니다. 바꾼 것이 없습니다.';
-    await updateCompany(company.id, payload);
-    setCompanies(await listCompanies());
+  function discardAll() {
     setIndustryDraft(null);
     setBasicsDraft(null);
+    setRecordsDraft(EMPTY_RECORDS_DRAFT);
+    setNumberDraft(null);
+  }
+
+  /** 업종·기본 정보·실적·인증의 바뀐 것을 한 번에 저장하고, 방금까지 보던 공고를 바뀐 프로필로 다시 판정한다. */
+  async function saveAll() {
+    if (!company || !dirtyCount || saveBlock) return;
+    setBusy('save');
+    setError('');
+    setSaved(null);
+    // 실적·인증은 건마다 요청이 나간다. 끝난 것은 초안에서 빼 두어, 중간에 실패해도 다시 저장할 때 두 번 들어가지 않게 한다.
+    const left: RecordsDraft = {
+      addPerformances: [...recordsDraft.addPerformances], addCertifications: [...recordsDraft.addCertifications],
+      removePerformanceIds: [...recordsDraft.removePerformanceIds], removeCertificationIds: [...recordsDraft.removeCertificationIds],
+      verified: { ...recordsDraft.verified },
+    };
+    let companySaved = false;
+    try {
+      const payload: Partial<CompanyCreatePayload> = {};
+      if (industryDirty) payload.industry_codes = industryList.map((item) => item.code);
+      if (basicsDirty && basics) {
+        payload.company_size = basics.company_size;
+        // Explicit selection sets both fields together. Unchanged legacy addresses stay untouched.
+        if (basics.region_code !== savedBasics?.region_code || basics.region_name !== savedBasics?.region_name) {
+          payload.region_code = basics.region_code;
+          payload.region_name = basics.region_name;
+        }
+        // 빈 칸이면 인력 정보를 건드리지 않는다. 0으로 덮으면 「0명임을 확인했다」가 되어 판정이 달라진다.
+        if (basics.staff_total.trim()) {
+          payload.staff = {
+            total_count: Number(basics.staff_total),
+            verified: company.staff?.verified ?? false,
+            roles: company.staff?.roles ?? [],
+          };
+        }
+      }
+      if (numberDraft) payload.business_registration_number = numberDraft;
+      if (Object.keys(payload).length) await updateCompany(company.id, payload);
+      companySaved = true;
+      while (left.addPerformances.length) { await createPerformance(company.id, left.addPerformances[0]); left.addPerformances.shift(); }
+      while (left.addCertifications.length) { await createCertification(company.id, left.addCertifications[0]); left.addCertifications.shift(); }
+      for (const [key, verified] of Object.entries(left.verified)) {
+        const id = key.slice(2);
+        // 지우기로 한 항목의 증빙 표시는 저장할 필요가 없다.
+        if (key.startsWith('p:') && !left.removePerformanceIds.includes(id)) await updatePerformance(company.id, id, { verified });
+        if (key.startsWith('c:') && !left.removeCertificationIds.includes(id)) await updateCertification(company.id, id, { verified });
+        delete left.verified[key];
+      }
+      while (left.removePerformanceIds.length) { await deletePerformance(company.id, left.removePerformanceIds[0]); left.removePerformanceIds.shift(); }
+      while (left.removeCertificationIds.length) { await deleteCertification(company.id, left.removeCertificationIds[0]); left.removeCertificationIds.shift(); }
+      setCompanies(await listCompanies());
+      discardAll();
+      setSaved({ rejudged: await rejudgeLastCase(company.id) });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '회사 프로필 저장에 실패했습니다.');
+      // 저장된 데까지는 화면에 반영하고, 남은 것만 초안으로 둔다.
+      if (companySaved) { setIndustryDraft(null); setBasicsDraft(null); setNumberDraft(null); }
+      setRecordsDraft(left);
+      await listCompanies().then(setCompanies).catch(() => { /* 목록은 다음 조회 때 맞춘다 */ });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** 조달청 조회 결과를 초안에 담는다. 업종은 더하기만 하고, 소재지는 조회한 시·도로 바꾼다. 저장은 「변경 사항 저장」으로 한다. */
+  function applyProcurement(found: ProcurementCompany) {
+    if (!company || !savedBasics) return '';
+    const added = found.industries.filter((item) => item.registrable && !industryList.some((row) => row.code === item.code));
+    if (added.length) setIndustryDraft([...industryList, ...added.map(({ code, name }) => ({ code, name }))]);
+    const region = found.region_code ? regionByCode(found.region_code) : undefined;
+    const current = basics ?? savedBasics;
+    const regionChanged = Boolean(region) && (region?.code !== current.region_code || region?.name !== current.region_name);
+    if (region && regionChanged) setBasicsDraft({ ...current, region_code: region.code, region_name: region.name });
+    const numberAdded = !company.business_registration_number && numberDraft !== found.business_registration_number;
+    if (numberAdded) setNumberDraft(found.business_registration_number);
+    if (!added.length && !regionChanged && !numberAdded) return '조달청 정보와 프로필이 이미 같습니다. 바꾼 것이 없습니다.';
     const parts = [
       added.length ? `업종 ${added.length}개 추가` : '',
       region && regionChanged ? `소재지 ${region.name}` : '',
     ].filter(Boolean);
-    return `프로필에 반영했습니다${parts.length ? ` — ${parts.join(', ')}` : ''}. 기업 구분·인력·실적·인증은 직접 확인해 주세요.`;
+    return `아래 항목에 채웠습니다${parts.length ? ` — ${parts.join(', ')}` : ''}. 「변경 사항 저장」을 눌러야 저장됩니다.`;
   }
 
   /** 회사를 처음 만들 때: 조회 결과로 입력란을 채운다. 저장은 「회사 프로필 만들기」를 눌러야 된다. */
@@ -326,6 +353,9 @@ export default function CompanyPage() {
     // eslint-disable-next-line react/react-compiler
     setIndustryDraft(null);
     setBasicsDraft(null);
+    setRecordsDraft(EMPTY_RECORDS_DRAFT);
+    setNumberDraft(null);
+    setSaved(null);
   }, [company?.id]);
 
   async function searchIndustries() {
@@ -484,7 +514,8 @@ export default function CompanyPage() {
 
             <div className="mt-5">
               <ProcurementLookup key={company.id} savedNumber={company.business_registration_number} disabled={busy !== null} onApply={applyProcurement}
-                applyHint="업종은 지금 프로필에 더하기만 하고(지우지 않음), 소재지는 조회한 시·도로 바꿉니다. 회사명·기업 구분·인력·실적·인증은 건드리지 않습니다." />
+                applyLabel="아래 항목에 채우기"
+                applyHint="업종은 지금 프로필에 더하기만 하고(지우지 않음), 소재지는 조회한 시·도로 바꿉니다. 「변경 사항 저장」을 눌러야 저장됩니다." />
             </div>
 
             {missingRows.length > 0 && (
@@ -502,15 +533,6 @@ export default function CompanyPage() {
                 <div>
                   <h2 className="text-[22px] font-extrabold tracking-[-0.03em]">업종 코드</h2>
                   <p className="mt-1 text-[13px] text-[var(--product-muted)]">공고의 업종 제한과 대조하는 값입니다. 여러 개를 등록할 수 있습니다.</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {industryDirty && (
-                    <Button variant="outline" size="sm" className="rounded-full" onClick={() => setIndustryDraft(null)} disabled={busy !== null}>되돌리기</Button>
-                  )}
-                  <Button size="sm" className="rounded-full" onClick={() => void saveIndustries()} disabled={!industryDirty || industryBlock !== null || busy !== null}>
-                    {busy === 'industry' ? <LoaderCircle className="animate-spin" /> : <Check />}
-                    업종 저장
-                  </Button>
                 </div>
               </div>
 
@@ -564,7 +586,7 @@ export default function CompanyPage() {
                 <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-[13px] leading-[1.7] text-rose-800">{industryBlock}</p>
               ) : industryDirty ? (
                 <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">
-                  저장하지 않은 변경이 있습니다. 「업종 저장」을 눌러야 판정에 반영됩니다.
+                  저장하지 않은 변경이 있습니다. 화면 아래의 「변경 사항 저장」을 눌러야 판정에 반영됩니다.
                 </p>
               ) : null}
             </section>
@@ -575,15 +597,6 @@ export default function CompanyPage() {
                   <div>
                     <h2 className="text-[22px] font-extrabold tracking-[-0.03em]">회사 기본 정보</h2>
                     <p className="mt-1 text-[13px] text-[var(--product-muted)]">소재지 제한 · 기업 구분 제한 · 인력 요건 판정에 쓰는 값입니다.</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {basicsDirty && (
-                      <Button variant="outline" size="sm" className="rounded-full" onClick={() => setBasicsDraft(null)} disabled={busy !== null}>되돌리기</Button>
-                    )}
-                    <Button size="sm" className="rounded-full" onClick={() => void saveBasics()} disabled={!basicsDirty || basicsBlock !== null || busy !== null}>
-                      {busy === 'basics' ? <LoaderCircle className="animate-spin" /> : <Check />}
-                      정보 저장
-                    </Button>
                   </div>
                 </div>
 
@@ -632,13 +645,13 @@ export default function CompanyPage() {
                   <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-[13px] leading-[1.7] text-rose-800">{basicsBlock}</p>
                 ) : basicsDirty ? (
                   <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">
-                    저장하지 않은 변경이 있습니다. 「정보 저장」을 눌러야 판정에 반영됩니다.
+                    저장하지 않은 변경이 있습니다. 화면 아래의 「변경 사항 저장」을 눌러야 판정에 반영됩니다.
                   </p>
                 ) : null}
               </section>
             )}
 
-            <ProfileRecordsManager company={company} onChanged={() => void initialize()} />
+            <ProfileRecordsManager company={company} draft={recordsDraft} onDraft={setRecordsDraft} disabled={busy !== null} />
 
             <section className="mt-7">
               <div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">프로필 항목</h2><span className="text-[14px] text-[var(--product-muted)]">판정에 실제로 들어가는 값입니다</span></div>
@@ -657,6 +670,35 @@ export default function CompanyPage() {
             </section>
 
           </>
+        )}
+
+        {/* 저장은 여기 한 곳이다(2026-10-13). 바뀐 것이 있을 때만 화면 아래에 떠 있고, 저장하면 보던 공고를 다시 판정한다. */}
+        {company && dirtyCount > 0 && (
+          <div className="sticky bottom-4 z-20 mt-8 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[var(--product-accent-deep)] bg-white px-5 py-3 shadow-[0_12px_36px_rgba(31,42,82,0.18)]" aria-label="저장하지 않은 변경">
+            <p className="text-[14px] font-semibold text-[var(--product-ink)]">
+              저장하지 않은 변경 {dirtyCount}건
+              {saveBlock && <span className="ml-2 font-medium text-rose-700">{saveBlock}</span>}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="rounded-full" onClick={discardAll} disabled={busy !== null}>되돌리기</Button>
+              <Button className="rounded-full px-5" onClick={() => void saveAll()} disabled={saveBlock !== null || busy !== null}>
+                {busy === 'save' ? <LoaderCircle className="animate-spin" /> : <Check />}변경 사항 저장
+              </Button>
+            </div>
+          </div>
+        )}
+        {company && saved && dirtyCount === 0 && (
+          <output className="sticky bottom-4 z-20 mt-8 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-emerald-200 bg-emerald-50 px-5 py-3 text-[14px] text-emerald-900 shadow-[0_12px_36px_rgba(31,42,82,0.12)]">
+            <span>
+              <strong>저장했습니다.</strong>{' '}
+              {saved.rejudged?.state === 'done' && <>보던 공고 「{saved.rejudged.title}」를 다시 판정했습니다 — <strong>{OVERALL_STATUS_BADGE[saved.rejudged.overall].label}</strong></>}
+              {saved.rejudged?.state === 'failed' && <span className="text-amber-800">보던 공고 「{saved.rejudged.title}」는 다시 판정하지 못했습니다. {saved.rejudged.message}</span>}
+            </span>
+            <span className="flex items-center gap-2">
+              {saved.rejudged && <NavigationLink href={`/qualification?caseId=${encodeURIComponent(saved.rejudged.caseId)}`} className="font-bold text-[var(--product-accent-deep)] underline">결과 보기</NavigationLink>}
+              <button type="button" className="text-[13px] text-emerald-800 underline" onClick={() => setSaved(null)}>닫기</button>
+            </span>
+          </output>
         )}
       </div>
     </main>

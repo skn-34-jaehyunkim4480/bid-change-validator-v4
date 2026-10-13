@@ -9,6 +9,7 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { forgetCase, lastCaseId, rememberCase } from '@/lib/last-case';
 import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
 import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
@@ -199,8 +200,11 @@ function canReuseAnalysis(summary: QualificationAnalysisSummary | null) {
 }
 
 export default function QualificationPage() {
-  const requestedCaseId = useSearchParams().get('caseId');
-  return <QualificationWorkspace key={requestedCaseId} requestedCaseId={requestedCaseId} />;
+  const params = useSearchParams();
+  const requestedCaseId = params.get('caseId');
+  // 「검토 건 목록」으로 들어오면 보던 공고로 되돌리지 않고 목록을 보여 준다.
+  const listRequested = params.get('view') === 'list';
+  return <QualificationWorkspace key={`${requestedCaseId}:${listRequested}`} requestedCaseId={requestedCaseId} listRequested={listRequested} />;
 }
 
 const CASES_PER_PAGE = 9;
@@ -302,7 +306,7 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
                   </span>
                 </NavigationLink>
                 {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
-                {expired && <div className="absolute bottom-4 left-5 right-5 flex"><DeleteExpiredCase caseId={item.id} onDeleted={onChanged} /></div>}
+                {expired && <div className="absolute bottom-4 left-5 right-5 flex"><DeleteExpiredCase caseId={item.id} onDeleted={() => { forgetCase(item.id); onChanged(); }} /></div>}
               </li>
             );
           })}
@@ -319,7 +323,7 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
   );
 }
 
-function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string | null }) {
+function QualificationWorkspace({ requestedCaseId, listRequested }: { requestedCaseId: string | null; listRequested: boolean }) {
   const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
@@ -433,6 +437,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
         if (request !== generation.current) return;
         setCaseNoticeState({ noticeId: caseItem.notice_id, notice });
         setActiveCase(caseItem);
+        rememberCase(caseItem.id);   // 다른 탭에 다녀와도 이 공고로 돌아온다
         setCases((previous) => previous.some((item) => item.id === caseItem.id) ? previous : [caseItem, ...previous]);
         setNoticeId(caseItem.notice_id);
         setCompanyId(caseItem.company_id ?? '');
@@ -495,8 +500,14 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
         router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
         return;
       }
-      // 여럿이면 어느 것을 열지 사용자가 카드 목록에서 고른다(CaseGrid).
-      if (caseResult.items.length > 1) return;
+      // 여럿이면: 방금까지 보던 공고가 있으면 그것을 다시 열고, 없거나 목록을 달라고 했으면 카드 목록에서 고른다(CaseGrid).
+      if (caseResult.items.length > 1) {
+        const last = listRequested ? null : lastCaseId();
+        if (last && caseResult.items.some((item) => item.id === last)) {
+          router.replace(`/qualification?caseId=${encodeURIComponent(last)}`);
+        } else if (last) forgetCase(last);
+        return;
+      }
       // Fetch the creation form's options only when the user has no case to open.
       const [noticeResult, companyResult] = await Promise.all([listNotices(), listCompanies()]);
       if (request !== generation.current) return;
@@ -509,7 +520,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     } finally {
       if (request === generation.current) setBusy(null);
     }
-  }, [requestedCaseId, router]);
+  }, [requestedCaseId, listRequested, router]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void initialize(), 0);
@@ -1014,8 +1025,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
         {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
         <div className="flex flex-wrap items-center gap-2">
           <NoticeCheckQuota />
-          {activeCase.expired && <DeleteExpiredCase caseId={activeCase.id} onDeleted={() => router.replace('/qualification')} />}
-          {cases.length > 1 && <NavigationLink href="/qualification" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
+          {activeCase.expired && <DeleteExpiredCase caseId={activeCase.id} onDeleted={() => { forgetCase(activeCase.id); router.replace('/qualification?view=list'); }} />}
+          {cases.length > 1 && <NavigationLink href="/qualification?view=list" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
           <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
         </div>

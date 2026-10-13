@@ -17,6 +17,7 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 import { replaceWith } from '@/lib/navigation';
+import { forgetCase } from '@/lib/last-case';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -178,6 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!active) return;
           if (cause instanceof ApiError && cause.status === 401) {
             window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+            forgetCase();
             setUser(null);
             replaceWith('/login');
             return;
@@ -239,11 +241,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await logout();
       window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+      forgetCase();
       setUser(null);
       replaceWith('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
         window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+        forgetCase();
         setUser(null);
         replaceWith('/login');
         return;
