@@ -48,14 +48,19 @@ _RECOMMENDED = re.compile(r"(?:AI|에이아이|인공지능)\s*추천|추천\s*(
 _JUDGE = re.compile(r"판정|검토|분석|확인해|가능한지|자격")
 _SEARCH_VERB = re.compile(r"찾아|검색|보여\s*줘|보여\s*주|알려\s*줘|알려\s*주|있어\??$|있나|있니|있을까")
 _NOTICE_NUMBER = re.compile(r"\b(?:R\d{2}[A-Z]{2}\d{6,}|\d{11,})\b", re.IGNORECASE)
-# 찾는 낱말이 아닌 말들. 이것들을 지우고 남은 것을 검색어로 쓴다.
-_NOISE = re.compile(
-    r"(?:입찰\s*)?공고(?:문|들)?(?:를|을|은|는|가|이|도|좀|만)?|"
-    r"찾아\s*(?:봐\s*)?(?:줘|주세요|줄래|줄\s*수\s*있어|주실래요)?(?:요)?|검색\s*(?:해\s*)?(?:줘|주세요|줄래)?(?:요)?|"
-    r"보여\s*(?:줘|주세요|줄래)(?:요)?|알려\s*(?:줘|주세요|줄래)(?:요)?|있어\??|있나요?\??|있니\??|있을까요?\??|"
-    r"관련(?:된|한)?|관한|에\s*대한|대한|해당하는|같은|좀|혹시|지금|현재|올라온|나온|뜬|중에(?:서)?|"
-    r"판정\s*(?:화면)?(?:까지|으로|에서)?|해\s*줘|해\s*주세요|부탁해(?:요)?|[.?!~,]"
+# 찾는 낱말이 아닌 말들. 낱말 단위로 보고, 이것에 해당하는 낱말을 지운 나머지를 검색어로 쓴다.
+# 말투가 달라도("찾아와봐", "찾아볼래", "검색 좀 해봐") 동사·부름말·조사만 걸러지게 낱말의 앞머리로 가른다.
+_NOISE_TOKEN = re.compile(
+    r"^(?:"
+    r"(?:입찰)?공고(?:문|들)?(?:를|을|은|는|가|이|도|만|중에|중에서|에서)?|입찰|"
+    r"찾(?:아(?!가)|으|기|는|을|자)\S*|검색\S*|보여\S*|알려\S*|골라\S*|"
+    r"있어\S*|있나\S*|있니\S*|있을까\S*|있는지\S*|"
+    r"관련\S*|관한|대한|에대한|해당하는|같은|쪽|"
+    r"야|저기|음|혹시|좀|지금|현재|요즘|최근|올라온|나온|뜬|새로|"
+    r"판정\S*|화면\S*|해|해봐|해줘\S*|해주\S*|줘|주세요|줄래\S*|와|와봐|봐|봐줘|부탁\S*|바로|빨리|얼른"
+    r")$"
 )
+_PARTICLE = re.compile(r"(?:을|를|이|가|은|는|의|에|도)$")
 
 
 def _is_expired(version: BidNoticeVersion) -> bool:
@@ -75,9 +80,9 @@ def search_terms(message: str) -> str | None:
         return number.group(0).upper()
     if "공고" not in text or not _SEARCH_VERB.search(text):
         return None
-    terms = " ".join(_NOISE.sub(" ", text).split())
-    # 한 글자짜리 조사만 남았거나 아무것도 없으면 찾을 것이 없다("공고 찾아줘").
-    terms = " ".join(token for token in terms.split() if len(token) >= 2)
+    tokens = [token.strip(".,?!~…\"'「」") for token in text.split()]
+    # 한 글자짜리만 남았거나 아무것도 없으면 찾을 것이 없다("공고 찾아줘").
+    terms = " ".join(token for token in tokens if len(token) >= 2 and not _NOISE_TOKEN.match(token))
     return terms or None
 
 
@@ -94,17 +99,28 @@ def _link(notice: BidNotice, version: BidNoticeVersion, *, action: LinkAction, n
     )
 
 
-def find_notices(db: Session, terms: str) -> LinkAnswer:
+def _search(db: Session, terms: str) -> list:
     # 공고 찾기 화면과 같은 조건·순서로 찾는다(마감 전 공고 먼저).
     from ..routers.notices import _availability_order, _keyword_filters
 
-    rows = db.execute(
+    return db.execute(
         select(BidNotice, BidNoticeVersion)
         .join(BidNoticeVersion, (BidNoticeVersion.notice_id == BidNotice.id) & BidNoticeVersion.is_current.is_(True))
         .where(*_keyword_filters(terms))
         .order_by(_availability_order(datetime.now(timezone.utc)), BidNotice.last_seen_at.desc(), BidNotice.id.desc())
         .limit(MAX_LINKS + 1)
     ).all()
+
+
+def find_notices(db: Session, terms: str) -> LinkAnswer:
+    rows = _search(db, terms)
+    if not rows:
+        # "소프트웨어를", "용역이" 처럼 조사가 붙어 안 잡혔을 수 있다. 낱말 끝의 조사를 떼고 한 번 더 찾는다.
+        bare = " ".join(_PARTICLE.sub("", token) if len(token) >= 3 else token for token in terms.split())
+        if bare != terms:
+            retried = _search(db, bare)
+            if retried:
+                rows, terms = retried, bare
     if not rows:
         return LinkAnswer(f"「{terms}」에 맞는 공고를 찾지 못했습니다. 낱말을 줄이거나 공고번호로 다시 찾아 보세요. 위쪽 검색창에서도 같은 검색을 할 수 있습니다.", [])
     more = len(rows) > MAX_LINKS
@@ -113,9 +129,25 @@ def find_notices(db: Session, terms: str) -> LinkAnswer:
     return LinkAnswer(head + " 「판정 화면으로」를 누르면 그 공고의 참가자격 화면이 열립니다.", links)
 
 
+def _company_for(db: Session, user: AppUser | None) -> UUID | None:
+    """추천의 기준이 될 회사. 계정에 회사가 있으면 그 회사다.
+
+    시스템 관리자와 로그인 없이 쓰는 개발 환경은 계정에 회사가 없다. 이때는 화면들(AI 추천, 공고 찾기)이 고르는 것과
+    같은 회사 — 가장 최근에 만든 회사 — 를 쓴다. 일반 계정에 회사가 없으면 None 이다(판정할 회사 프로필이 없다).
+    """
+    if user is not None and user.company_id is not None:
+        return user.company_id
+    if user is None or user.role == "SYSTEM_ADMIN":
+        from ..models import Company
+        return db.scalar(select(Company.id).order_by(Company.created_at.desc()).limit(1))
+    return None
+
+
 def recommended_notices(db: Session, user: AppUser | None, company_id: UUID | None) -> LinkAnswer:
     if company_id is None:
-        return LinkAnswer("AI 추천은 회사 프로필을 기준으로 합니다. 회사 프로필을 먼저 만들어 주세요.", [])
+        return LinkAnswer(
+            "아직 회사 프로필이 없어 추천과 판정을 할 수 없습니다. 회사 프로필 화면에서 회사명과 업종만 넣어 만들면 "
+            "(나머지 항목은 비워 두어도 됩니다) AI 추천 공고를 바로 판정으로 이어 드립니다.", [])
     # AI 추천 화면이 부르는 것과 같은 조회를 그대로 쓴다(추천 로직은 여기서 바꾸지 않는다).
     from fastapi import HTTPException
     from ..ml_recommendations.router import MLRecommendationRequest, recommend_ml
@@ -150,7 +182,7 @@ def recommended_notices(db: Session, user: AppUser | None, company_id: UUID | No
 def answer_with_links(db: Session, user: AppUser | None, message: str) -> LinkAnswer | None:
     """공고를 찾거나 추천 공고를 판정해 달라는 요청이면 답을 만든다. 아니면 None(평소처럼 모델이 답한다)."""
     if wants_recommended(message):
-        return recommended_notices(db, user, user.company_id if user is not None else None)
+        return recommended_notices(db, user, _company_for(db, user))
     terms = search_terms(message)
     if terms is not None:
         return find_notices(db, terms)
