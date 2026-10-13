@@ -2,16 +2,18 @@
 
 계정마다 쓸 수 있는 양을 요금제로 정한다.
 
-    요금제     월 요금    참가자격 확인(한 달 공고 수)   공고 하나의 Copilot 질문
-    FREE          0원              3                       6
-    BASIC     5,999원             20                      30
-    UNLIMITED 15,999원          제한 없음               제한 없음
+    요금제     월 요금    참가자격 확인(한 달 공고 수)   AI Copilot 질문
+    FREE          0원              3                    공고 하나에 6회, 일반 도우미 한 달 10회
+    BASIC     5,999원             20                    한 달 50회(공고 대화와 일반 도우미를 합쳐서)
+    UNLIMITED 15,999원          제한 없음             제한 없음
 
 세는 것:
   - 참가자격 확인: 그 달에 판정을 실행한 **서로 다른 공고** 수. 같은 공고를 다시 검토하는 것은 더 세지 않는다.
     달은 한국 시간의 달력 달이다. 달이 바뀌면 다시 0 부터 센다.
-  - Copilot 질문: **공고 대화 하나(검토 건)마다** AI 가 답한 질문 수(입력창 질문과 추천 질문). 달이 바뀌어도, 화면에서
-    '새 대화' 를 눌러도 다시 세지 않는다 — 그 공고의 대화에서 쓴 횟수다. 근거 보기 같은 단추와 일반 도우미는 세지 않는다.
+  - Copilot 질문: AI 가 답한 질문 수(입력창 질문과 추천 질문). 근거 보기 같은 단추는 세지 않는다.
+      무료   공고 대화 하나(검토 건)마다 6회 — 달이 바뀌어도, '새 대화' 를 눌러도 다시 세지 않는다.
+             일반 도우미는 한 달 10회.
+      베이직 공고 대화와 일반 도우미를 합쳐 한 달 50회. 공고마다 따로 두는 한도는 없다.
 
 세지 않는 계정: 시스템 관리자(SYSTEM_ADMIN), 그리고 로그인 없이 쓰는 개발 환경(user 가 None).
 한도는 `MEMBERSHIP_LIMITS_ENABLED` 를 켠 환경에서만 적용한다. 설정의 기본값은 꺼짐이고(테스트·스크립트),
@@ -49,14 +51,19 @@ class Plan:
     name: str
     monthly_price: int
     notice_checks: int | None        # None = 제한 없음
-    copilot_questions: int | None
+    copilot_questions: int | None    # 공고 대화 하나에서 물을 수 있는 횟수
+    general_questions: int | None    # 일반 도우미에 한 달 동안 물을 수 있는 횟수
+    copilot_total: int | None        # 공고 대화와 일반 도우미를 합쳐 한 달 동안 물을 수 있는 횟수(있으면 위 둘 대신 이것만 본다)
 
 
 PLANS: dict[str, Plan] = {
-    "FREE": Plan("FREE", "무료", 0, 3, 6),
-    "BASIC": Plan("BASIC", "베이직", 5_999, 20, 30),
-    "UNLIMITED": Plan("UNLIMITED", "무제한", 15_999, None, None),
+    "FREE": Plan("FREE", "무료", 0, 3, 6, 10, None),
+    "BASIC": Plan("BASIC", "베이직", 5_999, 20, None, None, 50),
+    "UNLIMITED": Plan("UNLIMITED", "무제한", 15_999, None, None, None, None),
 }
+# 일반 도우미의 질문은 공고 대화와 같은 종류(COPILOT_QUESTION)로 적고 subject_id 만 이 값으로 둔다.
+GENERAL_SUBJECT = "general"
+ChatScope = Literal["NOTICE", "GENERAL", "TOTAL"]
 # 멤버십 코드로 열리는 요금제. 시연에서는 가장 저렴한 유료 요금제를 연다.
 DEMO_CODE_PLAN: PlanCode = "BASIC"
 
@@ -118,14 +125,34 @@ def copilot_questions_used(db: Session, user: AppUser, case_id: UUID | str) -> i
     ) or 0
 
 
-def _required(kind: UsageKind, plan: Plan, used: int, limit: int) -> ApiError:
-    scope = (f"이번 달 참가자격을 확인할 수 있는 공고는 {limit}건" if kind == "NOTICE_CHECK"
-             else f"공고 하나에서 AI Copilot 에 물을 수 있는 질문은 {limit}회")
-    return ApiError(
-        402, "MEMBERSHIP_REQUIRED",
-        f"{plan.name} 요금제에서 {scope}까지입니다. 멤버십에 가입하면 더 쓸 수 있습니다.",
-        {"kind": kind, "plan": plan.code, "used": used, "limit": limit},
-    )
+def chat_quota(db: Session, user: AppUser, plan: Plan, subject: UUID | str) -> tuple[ChatScope, int | None, int]:
+    """이 대화(공고 검토 건 또는 일반 도우미)에 적용되는 채팅 한도: (어디까지 합쳐 세는가, 한도, 쓴 횟수)."""
+    mine = (MembershipUsage.user_id == user.id, MembershipUsage.kind == "COPILOT_QUESTION")
+    if plan.copilot_total is not None:
+        used = db.scalar(select(func.count(MembershipUsage.id)).where(*mine, MembershipUsage.period == current_period())) or 0
+        return "TOTAL", plan.copilot_total, used
+    if str(subject) == GENERAL_SUBJECT:
+        used = db.scalar(select(func.count(MembershipUsage.id)).where(
+            *mine, MembershipUsage.subject_id == GENERAL_SUBJECT, MembershipUsage.period == current_period())) or 0
+        return "GENERAL", plan.general_questions, used
+    return "NOTICE", plan.copilot_questions, copilot_questions_used(db, user, subject)
+
+
+_CHAT_LIMIT_TEXT = {
+    "NOTICE": "공고 하나에서 AI Copilot 에 물을 수 있는 질문은 {limit}회",
+    "GENERAL": "이번 달 일반 도우미에 물을 수 있는 질문은 {limit}회",
+    "TOTAL": "이번 달 AI Copilot 에 물을 수 있는 질문은 공고 대화와 일반 도우미를 합쳐 {limit}회",
+}
+
+
+def _required(kind: UsageKind, plan: Plan, used: int, limit: int, scope: ChatScope | None = None) -> ApiError:
+    text = (f"이번 달 참가자격을 확인할 수 있는 공고는 {limit}건" if kind == "NOTICE_CHECK"
+            else _CHAT_LIMIT_TEXT[scope or "NOTICE"].format(limit=limit))
+    more = "멤버십에 가입하면 더 쓸 수 있습니다." if plan.code == "FREE" else "다음 달에 다시 쓸 수 있습니다."
+    details = {"kind": kind, "plan": plan.code, "used": used, "limit": limit}
+    if scope is not None:
+        details["scope"] = scope
+    return ApiError(402, "MEMBERSHIP_REQUIRED", f"{plan.name} 요금제에서 {text}까지입니다. {more}", details)
 
 
 def _notice_counted(db: Session, user: AppUser, notice_id: UUID | str, period: str) -> bool:
@@ -161,41 +188,54 @@ def record_notice_check(db: Session, user: AppUser | None, notice_id: UUID | str
 
 
 def consume_copilot_question(db: Session, user: AppUser | None, case_id: UUID | str) -> None:
-    """이 공고 대화의 Copilot 질문 한 번을 쓴다. 한도를 넘으면 쓰지 않고 막는다. 커밋은 부르는 쪽이 한다."""
+    """Copilot 질문 한 번을 쓴다. case_id 는 공고 검토 건이거나 일반 도우미(GENERAL_SUBJECT)다.
+
+    한도를 넘으면 쓰지 않고 막는다. 커밋은 부르는 쪽이 한다.
+    """
     if not limits_apply(user):
         return
     plan = effective_plan(user)
-    if plan.copilot_questions is not None:
-        used = copilot_questions_used(db, user, case_id)
-        if used >= plan.copilot_questions:
-            raise _required("COPILOT_QUESTION", plan, used, plan.copilot_questions)
+    scope, limit, used = chat_quota(db, user, plan, case_id)
+    if limit is not None and used >= limit:
+        raise _required("COPILOT_QUESTION", plan, used, limit, scope)
     db.add(MembershipUsage(user_id=user.id, kind="COPILOT_QUESTION", subject_id=str(case_id), period=current_period()))
     db.flush()
+
+
+def consume_general_question(db: Session, user: AppUser | None) -> None:
+    """일반 도우미의 질문 한 번을 쓴다."""
+    consume_copilot_question(db, user, GENERAL_SUBJECT)
 
 
 def membership_state(db: Session, user: AppUser | None, case_id: UUID | str | None = None) -> dict:
     """화면에 줄 요금제·사용량. 한도를 적용하지 않는 계정은 limited=False 다.
 
-    Copilot 질문은 공고 대화마다 세므로 `case_id` 를 준 때만 그 대화에서 쓴 횟수를 싣는다(없으면 None).
+    `case_id` 에 공고 검토 건이나 일반 도우미(GENERAL_SUBJECT)를 주면 그 대화에 적용되는 채팅 한도를 `chat` 에 싣는다.
     """
     plans = [
         {"code": plan.code, "name": plan.name, "monthly_price": plan.monthly_price,
-         "notice_checks": plan.notice_checks, "copilot_questions": plan.copilot_questions}
+         "notice_checks": plan.notice_checks, "copilot_questions": plan.copilot_questions,
+         "general_questions": plan.general_questions, "copilot_total": plan.copilot_total}
         for plan in PLANS.values()
     ]
     if not limits_apply(user):
         return {"limited": False, "plan": "UNLIMITED", "plan_name": "제한 없음", "period": current_period(), "expires_at": None,
                 "limits": {"notice_checks": None, "copilot_questions": None},
-                "used": {"notice_checks": 0, "copilot_questions": None}, "plans": plans,
+                "used": {"notice_checks": 0, "copilot_questions": None}, "plans": plans, "chat": None,
                 "demo_code_enabled": False}
     plan = effective_plan(user)
+    chat = None
+    if case_id is not None:
+        scope, limit, used = chat_quota(db, user, plan, case_id)
+        chat = {"scope": scope, "limit": limit, "used": used}
     return {
         "limited": True, "plan": plan.code, "plan_name": plan.name, "period": current_period(),
         "expires_at": user.membership_expires_at if plan.code != "FREE" else None,
         "limits": {"notice_checks": plan.notice_checks, "copilot_questions": plan.copilot_questions},
         "used": {"notice_checks": notice_checks_used(db, user),
-                 "copilot_questions": copilot_questions_used(db, user, case_id) if case_id is not None else None},
-        "plans": plans,
+                 "copilot_questions": (copilot_questions_used(db, user, case_id)
+                                       if case_id is not None and str(case_id) != GENERAL_SUBJECT else None)},
+        "plans": plans, "chat": chat,
         "demo_code_enabled": bool(get_settings().membership_demo_code),
     }
 

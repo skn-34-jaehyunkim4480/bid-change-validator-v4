@@ -74,7 +74,7 @@ def test_free_plan_asks_six_copilot_questions_in_each_notice_conversation(limits
         membership.consume_copilot_question(db, user, case)
     db.commit()
     details = _blocked(lambda: membership.consume_copilot_question(db, user, case))
-    assert details == {"kind": "COPILOT_QUESTION", "plan": "FREE", "used": 6, "limit": 6}
+    assert details == {"kind": "COPILOT_QUESTION", "plan": "FREE", "used": 6, "limit": 6, "scope": "NOTICE"}
     assert membership.copilot_questions_used(db, user, case) == 6            # 막힌 질문은 세지 않는다
     # 다른 공고의 대화는 자기 횟수를 따로 쓴다.
     membership.consume_copilot_question(db, user, other_case)
@@ -127,7 +127,8 @@ def test_membership_code_opens_the_basic_plan_for_a_month(limits_on, db) -> None
     assert wrong.value.code == "MEMBERSHIP_CODE_INVALID" and user.membership_plan == "FREE"
 
     state = MembershipRead.model_validate(membership.subscribe_with_code(db, user, " 1234 "))
-    assert state.plan == "BASIC" and state.limits.notice_checks == 20 and state.limits.copilot_questions == 30
+    assert state.plan == "BASIC" and state.limits.notice_checks == 20 and state.limits.copilot_questions is None
+    assert [(plan.code, plan.copilot_total) for plan in state.plans] == [("FREE", None), ("BASIC", 50), ("UNLIMITED", None)]
     assert state.used.notice_checks == 3 and state.expires_at is not None
     assert [(plan.code, plan.monthly_price) for plan in state.plans] == [("FREE", 0), ("BASIC", 5999), ("UNLIMITED", 15999)]
     _check(db, user, uuid4())                                               # 늘어난 한도 안에서 다시 쓸 수 있다
@@ -150,3 +151,49 @@ def test_subscribing_needs_a_login_and_a_configured_code_and_takes_no_card_field
     # 가입 요청에는 카드 정보를 실을 수 없다.
     with pytest.raises(ValueError):
         MembershipSubscribe.model_validate({"plan": "BASIC", "membership_code": "1234", "card_number": "4111111111111111"})
+
+
+def test_free_plan_asks_the_general_helper_ten_times_a_month(limits_on, db) -> None:
+    user = db.make_user()
+    case = uuid4()
+    for _ in range(10):
+        membership.consume_general_question(db, user)
+    db.commit()
+    details = _blocked(lambda: membership.consume_general_question(db, user))
+    assert details == {"kind": "COPILOT_QUESTION", "plan": "FREE", "used": 10, "limit": 10, "scope": "GENERAL"}
+    # 일반 도우미를 다 써도 공고 대화는 자기 한도(6회)를 따로 쓴다.
+    membership.consume_copilot_question(db, user, case)
+    db.commit()
+    assert membership.membership_state(db, user, case)["chat"] == {"scope": "NOTICE", "limit": 6, "used": 1}
+    assert membership.membership_state(db, user, membership.GENERAL_SUBJECT)["chat"] == {"scope": "GENERAL", "limit": 10, "used": 10}
+    assert membership.membership_state(db, user)["chat"] is None
+    # 일반 도우미는 달마다 다시 센다.
+    db.query(MembershipUsage).filter(MembershipUsage.user_id == user.id).update({"period": "2000-01"})
+    db.commit()
+    membership.consume_general_question(db, user)
+
+
+def test_basic_plan_shares_fifty_questions_across_notices_and_the_general_helper(limits_on, db) -> None:
+    user = db.make_user()
+    user.membership_plan = "BASIC"
+    user.membership_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    db.commit()
+    cases = [uuid4(), uuid4()]
+    # 공고 하나에 30회를 넘겨도 된다 — 베이직에는 공고마다 두는 한도가 없다.
+    for _ in range(35):
+        membership.consume_copilot_question(db, user, cases[0])
+    for _ in range(5):
+        membership.consume_copilot_question(db, user, cases[1])
+    for _ in range(10):
+        membership.consume_general_question(db, user)
+    db.commit()
+    total = {"scope": "TOTAL", "limit": 50, "used": 50}
+    assert membership.membership_state(db, user, cases[1])["chat"] == total
+    assert membership.membership_state(db, user, membership.GENERAL_SUBJECT)["chat"] == total
+    details = _blocked(lambda: membership.consume_general_question(db, user))
+    assert details == {"kind": "COPILOT_QUESTION", "plan": "BASIC", "used": 50, "limit": 50, "scope": "TOTAL"}
+    _blocked(lambda: membership.consume_copilot_question(db, user, uuid4()))
+    # 합산 한도는 달마다 다시 센다.
+    db.query(MembershipUsage).filter(MembershipUsage.user_id == user.id).update({"period": "2000-01"})
+    db.commit()
+    membership.consume_copilot_question(db, user, cases[0])

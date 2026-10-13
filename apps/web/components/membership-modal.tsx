@@ -12,21 +12,32 @@ import './membership-modal.css';
   결제는 붙어 있지 않다. 카드 입력 칸은 모양만 있고 어디로도 보내지 않으며, 시연에서는 아래의 멤버십 코드로 가입한다.
 */
 
-const TITLE: Record<MembershipKind, string> = {
-  NOTICE_CHECK: '이번 달에 확인할 수 있는 공고를 모두 썼습니다',
-  COPILOT_QUESTION: '이 공고에서 물을 수 있는 AI Copilot 질문을 모두 썼습니다',
-};
+type ChatLimits = Pick<MembershipPlan, 'copilot_questions' | 'general_questions' | 'copilot_total'>;
 
-// 참가자격 확인은 한 달에 몇 건, Copilot 질문은 공고 하나에 몇 회로 센다.
+// 참가자격 확인은 한 달에 몇 건으로 센다. Copilot 질문은 요금제에 따라 공고마다·일반 도우미 따로 세거나(무료), 둘을 합쳐 한 달로 센다(베이직).
 const noticeLimit = (value: number | null) => (value == null ? '참가자격 확인 제한 없음' : `참가자격 확인 월 ${value}건`);
-const copilotLimit = (value: number | null) => (value == null ? 'AI Copilot 질문 제한 없음' : `공고마다 AI Copilot 질문 ${value}회`);
+function copilotLimit(plan: ChatLimits | null | undefined) {
+  if (!plan) return 'AI Copilot 질문';
+  if (plan.copilot_total != null) return `AI Copilot 질문 월 ${plan.copilot_total}회(공고 대화와 일반 도우미 합산)`;
+  if (plan.copilot_questions == null && plan.general_questions == null) return 'AI Copilot 질문 제한 없음';
+  return `공고마다 AI Copilot 질문 ${plan.copilot_questions ?? 0}회, 일반 도우미 월 ${plan.general_questions ?? 0}회`;
+}
 
-function leadText(kind: MembershipKind, membership: Membership) {
-  const more = '멤버십에 가입하면 더 쓸 수 있습니다.';
+function titleOf(kind: MembershipKind, plan: ChatLimits | undefined) {
+  if (kind === 'NOTICE_CHECK') return '이번 달에 확인할 수 있는 공고를 모두 썼습니다';
+  if (plan?.copilot_total != null) return '이번 달 AI Copilot 질문을 모두 썼습니다';
+  return kind === 'GENERAL_QUESTION' ? '이번 달 일반 도우미 질문을 모두 썼습니다' : '이 공고에서 물을 수 있는 AI Copilot 질문을 모두 썼습니다';
+}
+
+function leadText(kind: MembershipKind, membership: Membership, plan: ChatLimits | undefined) {
+  // 이미 유료 요금제를 쓰는 계정에는 가입을 다시 권하지 않는다.
+  const more = membership.plan === 'FREE' ? '멤버십에 가입하면 더 쓸 수 있습니다.' : '다음 달에 다시 쓸 수 있습니다.';
   if (kind === 'NOTICE_CHECK') {
     return `${membership.plan_name} 요금제는 한 달에 공고 ${membership.limits.notice_checks ?? 0}건까지 참가자격을 확인할 수 있습니다(이번 달 ${membership.used.notice_checks ?? 0}건 사용). ${more}`;
   }
-  return `${membership.plan_name} 요금제는 공고 하나에서 AI Copilot 질문을 ${membership.limits.copilot_questions ?? 0}회까지 쓸 수 있습니다. ${more}`;
+  if (plan?.copilot_total != null) return `${membership.plan_name} 요금제는 공고 대화와 일반 도우미를 합쳐 한 달에 AI Copilot 질문을 ${plan.copilot_total}회까지 쓸 수 있습니다. ${more}`;
+  if (kind === 'GENERAL_QUESTION') return `${membership.plan_name} 요금제는 일반 도우미에 한 달 ${plan?.general_questions ?? 0}회까지 물을 수 있습니다. ${more}`;
+  return `${membership.plan_name} 요금제는 공고 하나에서 AI Copilot 질문을 ${plan?.copilot_questions ?? 0}회까지 쓸 수 있습니다. ${more}`;
 }
 
 export function MembershipModal() {
@@ -65,7 +76,7 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
         <span className="membership-done-mark" aria-hidden><Check size={22} /></span>
         <h2 id="membership-title">{done.plan_name} 요금제가 적용되었습니다</h2>
         <p className="membership-lead">
-          {noticeLimit(plan?.notice_checks ?? null)}, {copilotLimit(plan?.copilot_questions ?? null)}까지 쓸 수 있습니다.
+          {noticeLimit(plan?.notice_checks ?? null)}, {copilotLimit(plan)}까지 쓸 수 있습니다.
           하던 작업을 다시 시도해 주세요.
         </p>
         <div className="membership-actions"><button type="button" className="membership-primary" onClick={close}>확인</button></div>
@@ -75,6 +86,7 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
 
   const paidPlans = (membership?.plans ?? []).filter((plan): plan is MembershipPlan & { code: Exclude<PlanCode, 'FREE'> } => plan.code !== 'FREE');
   const chosen = paidPlans.find((plan) => plan.code === selected) ?? null;
+  const currentPlan = membership?.plans.find((plan) => plan.code === membership.plan);
   return (
     <div className="membership-body">
       <button type="button" className="membership-close" aria-label="닫기" onClick={close}><X size={18} /></button>
@@ -82,9 +94,9 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
         <PaymentStep plan={chosen} codeEnabled={membership.demo_code_enabled} onBack={() => setSelected(null)} onDone={(next) => { setDone(next); membershipUsage.refresh(); }} />
       ) : (
         <>
-          <h2 id="membership-title">{TITLE[kind]}</h2>
+          <h2 id="membership-title">{titleOf(kind, currentPlan)}</h2>
           <p className="membership-lead">
-            {membership ? leadText(kind, membership) : loadError || '요금제 정보를 불러오고 있습니다…'}
+            {membership ? leadText(kind, membership, currentPlan) : loadError || '요금제 정보를 불러오고 있습니다…'}
           </p>
           <ul className="membership-plans">
             {paidPlans.map((plan) => (
@@ -95,7 +107,7 @@ function MembershipSteps({ kind }: { kind: MembershipKind }) {
                 </div>
                 <ul>
                   <li>{noticeLimit(plan.notice_checks)}</li>
-                  <li>{copilotLimit(plan.copilot_questions)}</li>
+                  <li>{copilotLimit(plan)}</li>
                 </ul>
                 <button type="button" className="membership-primary" onClick={() => setSelected(plan.code)}>가입</button>
               </li>

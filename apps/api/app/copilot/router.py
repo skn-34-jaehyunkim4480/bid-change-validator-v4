@@ -11,7 +11,7 @@ from ..auth_models import AppUser
 from ..ask_back_schemas import QualificationAnswerRead
 from ..database import get_db
 from ..errors import ApiError
-from ..membership import consume_copilot_question, ensure_case_not_expired
+from ..membership import consume_copilot_question, consume_general_question, ensure_case_not_expired
 from ..qualification.judgment import QualificationJudgmentError
 from ..revalidation_schemas import QualificationRevalidationRead
 from .actions import confirm_action
@@ -161,9 +161,14 @@ def general_chat_response(payload: GeneralChatRequest, semantic_processing: bool
 @router.post("/general-chat", response_model=CopilotChatResponse)
 def copilot_general_chat(
     payload: GeneralChatRequest,
+    db: Session = Depends(get_db),
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
-    _user: AppUser | None = Depends(get_optional_current_user),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CopilotChatResponse:
+    # 요금제 한도: 모델을 부르는 질문만 센다. 사용 전 안내를 확인하지 않은 요청은 모델을 부르지 않는다.
+    if semantic_processing:
+        consume_general_question(db, user)
+        db.commit()
     return general_chat_response(payload, semantic_processing)
 
 
