@@ -242,3 +242,37 @@ def test_account_without_a_company_creates_its_own_profile_once() -> None:
                 db.delete(company)
                 db.commit()
         db.close()
+
+
+def test_profile_reset_clears_records_but_keeps_the_required_values() -> None:
+    """프로필 초기화(2026-10-13): 실적·인증·인력·사업자번호를 비우고 회사명·업종·소재지·기업 구분은 남긴다."""
+    number = _business_number()
+    created = client.post("/api/v1/companies", json={
+        "name": "초기화 확인 회사", "business_registration_number": number, "region_code": "11", "region_name": "서울특별시",
+        "company_size": "SMALL", "industry_codes": ["0001"],
+        "staff": {"total_count": 5, "verified": True, "roles": [{"role_name": "PM", "headcount": 2, "verified": True}]},
+    })
+    assert created.status_code == 201, created.text
+    company_id = created.json()["id"]
+    try:
+        assert client.post(f"/api/v1/companies/{company_id}/certifications", json={"name": "ISO 27001"}).status_code == 201
+        assert client.post(f"/api/v1/companies/{company_id}/performances", json={
+            "name": "실적", "amount": 1000, "completed_at": "2025-01-31"}).status_code == 201
+
+        reset = client.post(f"/api/v1/companies/{company_id}/reset")
+        assert reset.status_code == 200, reset.text
+        body = reset.json()
+        assert body["performances"] == [] and body["certifications"] == [] and body["staff"] is None
+        assert body["business_registration_number"] is None
+        assert (body["name"], body["region_code"], body["company_size"]) == ("초기화 확인 회사", "11", "SMALL")
+        assert [item["code"] for item in body["industries"]] == ["0001"]
+        # 비운 번호는 다른 회사가 다시 쓸 수 있다.
+        reuse = client.post("/api/v1/companies", json={
+            "name": "번호를 이어받는 회사", "business_registration_number": number, "region_code": "11",
+            "company_size": "SMALL", "industry_codes": ["0001"], "staff": {"total_count": 1, "verified": False, "roles": []},
+        })
+        assert reuse.status_code == 201, reuse.text
+        client.delete(f"/api/v1/companies/{reuse.json()['id']}")
+        assert client.post(f"/api/v1/companies/{uuid4()}/reset").status_code == 404
+    finally:
+        client.delete(f"/api/v1/companies/{company_id}")
