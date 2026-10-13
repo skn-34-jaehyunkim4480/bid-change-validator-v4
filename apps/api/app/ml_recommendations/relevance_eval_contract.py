@@ -75,6 +75,8 @@ def audit(corpus: dict, labels: dict | None = None, pool: dict | None = None,
     if not companies or not notices:
         raise ValueError("Empty corpus")
     c_by_id, n_by_version = {}, {}
+    if corpus.get("family_linkage_status") != "CONFIRMED_CLOSED":
+        errors.append("Confirmed notice-family relation closure unavailable")
     body_counts = Counter()
     checked_sources = {}
     for c in companies:
@@ -148,6 +150,7 @@ def audit(corpus: dict, labels: dict | None = None, pool: dict | None = None,
     }
     if not labels:
         notes.append("No independently reviewed labels; ranking metrics prohibited")
+        report["status"] = "NOT_READY" if errors else "DATA_ONLY_NOT_EVALUATED"
         return report
     if labels.get("schema_version") != SCHEMA or labels.get("corpus_sha256") != sha(corpus):
         raise ValueError("Review file schema/corpus fingerprint mismatch")

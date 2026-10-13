@@ -40,6 +40,7 @@ def fixture(tmp_path):
                                "block_refs": [0]}],
         })
     corpus = {"schema_version": SCHEMA, "collected_at": date.isoformat(),
+              "family_linkage_status": "CONFIRMED_CLOSED",
               "companies": companies, "notices": notices}
     reviews = []
     for i in range(13):
@@ -182,4 +183,4 @@ def test_official_code_only_exact_match():
                                    snapshot_sha256="source", collected_at="2026-10-13T00:00:00Z")
     assert corpus["master_match_count"] == 1
     assert corpus["master_unmatched_count"] == 1
-    assert audit(corpus)["status"] == "DATA_ONLY_NOT_EVALUATED"
+    assert audit(corpus)["status"] == "NOT_READY"

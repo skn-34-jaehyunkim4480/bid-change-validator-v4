@@ -1,4 +1,4 @@
-﻿# PR A — business-relevance data and blind evaluation contract
+# PR A — business-relevance data and blind evaluation contract
 
 This is an **offline-only** contract, **not** a production recommendation change or an eligibility decision. No trained weights and no GPT-generated judgments are committed.
 
@@ -17,7 +17,7 @@ Review: external private JSON `schema_version`, `corpus_sha256`, `reviews` recor
 ## Leakage/ready gates
 
 - Duplicate company IDs, duplicate notice versions, duplicate reviews, stale company/task fingerprints, wrong version evidence, or missing source SHA fail closed.
-- Strict company independence across train / validation / test; confirmed revised notices, base notice numbers, and same notice families must not cross split. Group relations must be closed **before** the corpus is frozen. Do not assume that a fuzzy similar title is a confirmed relation.
+- Corpus must explicitly declare `family_linkage_status=CONFIRMED_CLOSED`; otherwise its evaluation readiness fails. Strict company independence across train / validation / test; confirmed revised notices, base notice numbers, and same notice families must not cross split. Group relations must be closed **before** the corpus is frozen. Do not assume that a fuzzy similar title is a confirmed relation.
 - Strict posting time separation: max(train) < min(validation) and max(validation) < min(test), based on `posted_at` (not collection time). Missing times block strict evaluation.
 - Minimum 10 independently reviewed test companies, 30 tested company–notice judgments each, with both relevant (2/3) and nonrelevant (0/1) observations. These are **initial minimum gates**, not statistical proof of target accuracy. Holdout used to tune models is no longer a final untouched test.
 - Audit labels and corpus snapshot digests every run. Synthetic firm evaluations are exploratory only; real-firm recommendation accuracy is not established.

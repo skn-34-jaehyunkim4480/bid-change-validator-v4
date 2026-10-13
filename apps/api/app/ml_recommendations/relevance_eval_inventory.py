@@ -1,4 +1,4 @@
-﻿"""Read-only inventory and safe title-only import of frozen local BidCheck data.
+"""Read-only inventory and safe title-only import of frozen local BidCheck data.
 
 This tool deliberately does not infer linkage between historical Golden documents
 and a separate current-notice snapshot by text/title similarity.
@@ -52,6 +52,7 @@ def import_title_snapshot(snapshot: dict, *, master_industries: dict, snapshot_s
                         "title": n["title"], "task_text": "", "task_evidence": [],
                         "body_status": "MISSING", "business_type": n.get("business_type")})
     return {"schema_version": SCHEMA, "collected_at": collected_at,
+            "family_linkage_status": "UNVERIFIED",
             "source_snapshot_sha256": snapshot_sha256,
             "master_match_count": matched, "master_unmatched_count": unmatched,
             "companies": company_rows, "notices": notices}
