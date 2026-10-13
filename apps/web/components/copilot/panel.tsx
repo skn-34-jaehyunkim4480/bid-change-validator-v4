@@ -11,7 +11,7 @@ import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { GENERAL_CONVERSATION_ID } from '@/lib/copilot-conversation';
-import { MEMBERSHIP_REQUIRED, membershipModal, useMembership } from '@/lib/membership';
+import { GENERAL_CHAT, MEMBERSHIP_REQUIRED, membershipModal, useMembership } from '@/lib/membership';
 import { getCopilotStatusLabel, getSourceLocationLabel, splitAnswerBlocks } from '@/lib/copilot-view-model';
 import { getCopilotJobs } from '@/lib/copilot-api';
 import { getPreflightCase } from '@/lib/api';
@@ -277,13 +277,17 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
   };
   // 요금제 한도를 넘어 막힌 질문이면 멤버십 창을 띄운다. 같은 실패에 한 번만 뜨도록 대화의 순번에 맞춘다.
   useEffect(() => {
-    if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open('COPILOT_QUESTION');
-  }, [state.errorCode, state.revision]);
+    if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open(general ? 'GENERAL_QUESTION' : 'COPILOT_QUESTION');
+  }, [state.errorCode, state.revision, general]);
   const expired = useCaseExpired(caseId);
   // 이 공고 대화에서 남은 질문 수(요금제 한도가 있는 계정만). 답이 올 때마다 다시 읽는다.
-  const membership = useMembership(general ? undefined : caseId || undefined, `${state.revision}:${state.busy}`);
-  const questionLimit = !general && caseId && !expired && membership?.limited ? membership.limits.copilot_questions : null;
-  const questionsLeft = questionLimit == null ? null : Math.max(0, questionLimit - (membership?.used.copilot_questions ?? 0));
+  // 무료는 공고마다·일반 도우미 따로, 베이직은 둘을 합쳐 센다. 어느 쪽인지는 서버가 정해 chat 에 실어 준다.
+  const membership = useMembership(general ? GENERAL_CHAT : caseId || undefined, `${state.revision}:${state.busy}`);
+  const quota = caseId && !expired && membership?.limited ? membership.chat ?? null : null;
+  const questionLimit = quota?.limit ?? null;
+  const questionsLeft = quota == null || questionLimit == null ? null : Math.max(0, questionLimit - quota.used);
+  const quotaHint = quota?.scope === 'TOTAL' ? '이번 달에 공고 대화와 일반 도우미를 합쳐 물을 수 있는 남은 횟수'
+    : quota?.scope === 'GENERAL' ? '이번 달에 일반 도우미에 물을 수 있는 남은 횟수' : '이 공고에서 AI Copilot 에 물을 수 있는 남은 횟수';
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>
@@ -387,7 +391,7 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
           disabled={!caseId || expired || state.busy || !semanticProcessing} />
         <button type="submit" aria-label="질문 보내기" disabled={!caseId || expired || state.busy || !question.trim()}><Send size={18} /></button>
       </div>
-      <small>Enter 전송 · Shift+Enter 줄바꿈{questionsLeft != null && <span className="copilot-quota" title="이 공고에서 AI Copilot 에 물을 수 있는 남은 횟수"> · 남은 질문 {questionsLeft}/{questionLimit}</span>}</small>
+      <small>Enter 전송 · Shift+Enter 줄바꿈{questionsLeft != null && <span className="copilot-quota" title={quotaHint}> · 남은 질문 {questionsLeft}/{questionLimit}</span>}</small>
     </form>
   </>;
 }

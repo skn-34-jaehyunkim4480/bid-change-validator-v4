@@ -6,7 +6,9 @@ import { apiFetch, ApiError } from './api';
   어느 화면에서든 같은 창을 띄운다(components/membership-modal.tsx).
 */
 
-export type MembershipKind = 'NOTICE_CHECK' | 'COPILOT_QUESTION';
+export type MembershipKind = 'NOTICE_CHECK' | 'COPILOT_QUESTION' | 'GENERAL_QUESTION';
+/** 일반 도우미의 한도를 물을 때 getMembership 에 주는 값(대화 id 와 같다). */
+export const GENERAL_CHAT = 'general';
 export type PlanCode = 'FREE' | 'BASIC' | 'UNLIMITED';
 
 export type MembershipPlan = {
@@ -15,8 +17,16 @@ export type MembershipPlan = {
   monthly_price: number;
   /** null 은 제한 없음. */
   notice_checks: number | null;
+  /** 공고 하나에서 물을 수 있는 횟수. */
   copilot_questions: number | null;
+  /** 일반 도우미에 한 달 동안 물을 수 있는 횟수. */
+  general_questions: number | null;
+  /** 공고 대화와 일반 도우미를 합쳐 한 달 동안 물을 수 있는 횟수. 있으면 위 둘 대신 이것만 적용된다. */
+  copilot_total: number | null;
 };
+
+/** 지금 대화에 적용되는 채팅 한도. NOTICE: 이 공고에서, GENERAL: 일반 도우미 한 달, TOTAL: 둘을 합쳐 한 달. */
+export type ChatQuota = { scope: 'NOTICE' | 'GENERAL' | 'TOTAL'; limit: number | null; used: number };
 
 export type Membership = {
   limited: boolean;
@@ -29,6 +39,8 @@ export type Membership = {
   /** copilot_questions 는 공고(caseId)를 준 조회에서만 채워진다. */
   used: { notice_checks: number | null; copilot_questions: number | null };
   plans: MembershipPlan[];
+  /** 공고(caseId)나 일반 도우미를 준 조회에서만 채워진다. */
+  chat?: ChatQuota | null;
   demo_code_enabled: boolean;
 };
 
@@ -43,9 +55,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-/** caseId 를 주면 그 공고 대화에서 쓴 Copilot 질문 수도 함께 온다. */
+/** caseId(공고 대화)나 GENERAL_CHAT(일반 도우미)을 주면 그 대화에 적용되는 채팅 한도(chat)도 함께 온다. */
 export const getMembership = (caseId?: string) =>
-  request<Membership>(`/api/v1/membership${caseId ? `?case_id=${encodeURIComponent(caseId)}` : ''}`);
+  request<Membership>(`/api/v1/membership${!caseId ? '' : caseId === GENERAL_CHAT ? '?general=true' : `?case_id=${encodeURIComponent(caseId)}`}`);
 
 /** 멤버십 코드로 가입한다. 카드 정보는 보내지 않는다 — 서버에 그것을 받는 칸이 없다. */
 export const subscribeWithCode = (plan: Exclude<PlanCode, 'FREE'>, membershipCode: string) =>
