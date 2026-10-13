@@ -84,3 +84,16 @@ A bounded read-only RDS metadata query reviewed all 20 snippet-insufficient noti
 The targeted_development_labels.py validator rejects duplicates and old-pair reuse, invalid original excerpt digests, unexpected human approval, and final-holdout claims. Related local suite: 47 passed (5 new). No paid API calls, AWS writes, production model deployment, PR merge or large-model evaluation.
 
 Next: source-block review of alternate attachments using an authorized read-only approach; close change/reannouncement families; then obtain independent task-verified labels and untouched temporal/company holdouts before ranking accuracy comparison.
+## Additional AWS alternate-attachment verification, 2026-10-13
+
+New work beyond the existing 49 excerpts and 116 original developmental labels:
+
+A bounded read-only AWS RDS audit examined attachment metadata for 20 previously inconclusive versions (80 attachment rows), followed by limited read-only RDS extraction from alternate documents for eight versions, two documents per batch. The recovered source previews contain identifiable project scope: AI-assisted K-pop song-camp training and audio/video deliverables; 3D/PLC laboratory modeling; research data platform/CMS and GPT app enhancements; pipe relocation and civil works; 100/200GbE optical cable procurement; AI short-video competition; school seismic assessment; and robotic cafe equipment supply.
+
+Local private files: alternate_targets_8.json; alternate_small_0.json, alternate_small_2.json, alternate_small_4.json, alternate_small_6.json; alternate_review_v1/alternate_review_candidates.jsonl and manifest.json. Exactly eight source version/document identities and excerpt preview SHAs were verified using the source cache. The preview is limited to 550 characters per selected block. Original S3 bytes and complete extracted blocks were NOT independently rehashed, and the reviewed excerpts are NOT FULL_TASK or human-approved.
+
+20 new distinct GPT-6 authored targeted-development firm-task judgments are preserved privately at alternate_preview_dev_v1/alternate_preview_dev_labels.jsonl. Distribution: grade 0 = 1, grade 1 = 14, grade 2 = 5, grade 3 = 0. The five positive grades cover four distinct notice versions, so evidence is still sparse. Total exploratory dev labels: 136 = original 90 + 26 prior targeted + 20 new preview-only; grades 0:86, 1:29, 2:21, 3:0. This is POSITIVE-ENRICHED, unapproved and deliberately NOT a full-universe accuracy evaluation.
+
+Among the eight recovered notice versions, 3 are involved in previously observed confirmed notice_relations edges; several links leave the sampled universe. Family closure is unproven. No valid chronological/company/family holdout exists, and BM25/E5/Hybrid full-task accuracy is not measured.
+
+Five new offline source validation/regression tests added; total relevant local tests: 52 passed. No paid OpenAI API usage, no AWS writes, no production inference change, and no PR merges. The other 12 inconclusive versions await alternative-source content examination and review.
