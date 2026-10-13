@@ -279,11 +279,11 @@ export function PanelBody({ caseId, page, screen }: { caseId: string; page: Copi
   useEffect(() => {
     if (state.errorCode === MEMBERSHIP_REQUIRED) membershipModal.open('COPILOT_QUESTION');
   }, [state.errorCode, state.revision]);
+  const expired = useCaseExpired(caseId);
   // 이 공고 대화에서 남은 질문 수(요금제 한도가 있는 계정만). 답이 올 때마다 다시 읽는다.
   const membership = useMembership(general ? undefined : caseId || undefined, `${state.revision}:${state.busy}`);
-  const questionLimit = !general && caseId && membership?.limited ? membership.limits.copilot_questions : null;
+  const questionLimit = !general && caseId && !expired && membership?.limited ? membership.limits.copilot_questions : null;
   const questionsLeft = questionLimit == null ? null : Math.max(0, questionLimit - (membership?.used.copilot_questions ?? 0));
-  const expired = useCaseExpired(caseId);
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   return <>

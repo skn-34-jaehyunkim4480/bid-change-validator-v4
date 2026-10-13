@@ -147,3 +147,4 @@
 .copilot-expired-note{display:block;margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#dfe2e8;color:#3d4350;font-size:13px;line-height:19px}
 .copilot-page-item[data-expired]{background:#e9ebf0}
 .copilot-page-item[data-expired]:hover{background:#dfe2e8}
+.copilot-page-item .copilot-expired{display:inline-block;color:#fff;font-size:11px;line-height:16px;overflow:visible;text-overflow:clip;vertical-align:1px}
