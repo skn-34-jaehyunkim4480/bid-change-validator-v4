@@ -127,7 +127,8 @@ export function AppHeader({
                 {item.label}
               </NavigationLink>
             ))}
-            {(user?.role === 'SYSTEM_ADMIN' || user?.role === 'ADMIN') && (
+            {/* 운영 관리는 시스템 관리자에게만 보인다. 회사 관리자(ADMIN)는 일반 계정이 자기 회사를 만들면 되는 역할이라 메뉴에 두지 않는다(2026-10-13). */}
+            {user?.role === 'SYSTEM_ADMIN' && (
               <NavigationLink href="/admin" className="app-nav-link" aria-current={pathname.startsWith('/admin') ? 'page' : undefined}>운영 관리</NavigationLink>
             )}
           </nav>
