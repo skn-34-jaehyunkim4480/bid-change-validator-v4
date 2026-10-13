@@ -3,9 +3,15 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
+from types import SimpleNamespace
+
+from apps.api.app import membership
+from apps.api.app.auth_models import AppUser
 from apps.api.app.database import SessionLocal
+from apps.api.app.errors import ApiError
 from apps.api.app.main import app
 from apps.api.app.models import BidNotice, BidNoticeVersion, PreflightCase
 from apps.api.app.schemas import BusinessType
@@ -66,6 +72,48 @@ def test_expired_case_is_flagged_and_only_expired_cases_can_be_deleted() -> None
         if notice_id is not None:
             for case in db.query(PreflightCase).filter(PreflightCase.notice_id == notice_id):
                 db.delete(case)
+            db.commit()
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        db.close()
+
+
+def test_copilot_chat_is_blocked_for_limited_accounts_on_expired_cases(monkeypatch) -> None:
+    db = SessionLocal()
+    notice_no = f"R26EXC{uuid4().hex[:8].upper()}"
+    notice_id = None
+    try:
+        _, notice, version = save_notice_snapshot(
+            db, item=_notice_item(notice_no), business_type=BusinessType.SERVICE, source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        notice_id = notice.id
+        case = PreflightCase(notice_id=notice_id, current_version_id=version.id, title="만료 채팅 확인")
+        db.add(case)
+        db.commit()
+        user = AppUser(username=f"expiry-{uuid4().hex[:10]}", password_hash="x", role="USER", active=True)
+        admin = AppUser(username=f"expiry-{uuid4().hex[:10]}", password_hash="x", role="SYSTEM_ADMIN", active=True)
+
+        def set_deadline(value: datetime) -> None:
+            db.get(BidNoticeVersion, version.id).bid_closed_at = value
+            db.commit()
+
+        monkeypatch.setattr(membership, "get_settings", lambda: SimpleNamespace(membership_limits_enabled=True, membership_demo_code=None))
+        set_deadline(datetime.now(timezone.utc) + timedelta(days=1))
+        membership.ensure_case_not_expired(db, user, case)                  # 마감 전에는 통과
+        set_deadline(datetime.now(timezone.utc) - timedelta(minutes=1))
+        with pytest.raises(ApiError) as blocked:
+            membership.ensure_case_not_expired(db, user, case)
+        assert blocked.value.status_code == 409 and blocked.value.code == "CASE_EXPIRED"
+        membership.ensure_case_not_expired(db, admin, case)                 # 시스템 관리자는 한도 대상이 아니다
+        monkeypatch.setattr(membership, "get_settings", lambda: SimpleNamespace(membership_limits_enabled=False, membership_demo_code=None))
+        membership.ensure_case_not_expired(db, user, case)                  # 한도를 켜지 않은 환경에서는 막지 않는다
+    finally:
+        if notice_id is not None:
+            for item in db.query(PreflightCase).filter(PreflightCase.notice_id == notice_id):
+                db.delete(item)
             db.commit()
             notice = db.get(BidNotice, notice_id)
             if notice is not None:

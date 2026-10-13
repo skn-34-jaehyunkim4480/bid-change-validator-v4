@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -13,6 +12,7 @@ from ..auth_models import AppUser
 from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
+from ..membership import version_expired as _is_expired
 from ..models import BidNotice, BidNoticeVersion, PreflightCase, ProposalDocument
 from ..schemas import (
     NoticeDocumentTextRead,
@@ -67,16 +67,6 @@ def _case_read(db: Session, case: PreflightCase) -> PreflightCaseRead:
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
-
-
-def _is_expired(version: BidNoticeVersion) -> bool:
-    """입찰서 제출 마감이 지났는가. 마감을 모르는 공고는 만료로 보지 않는다."""
-    closed = version.bid_closed_at
-    if closed is None:
-        return False
-    if closed.tzinfo is None:
-        closed = closed.replace(tzinfo=timezone.utc)
-    return closed < datetime.now(timezone.utc)
 
 
 def _get_case(db: Session, case_id: UUID) -> PreflightCase:

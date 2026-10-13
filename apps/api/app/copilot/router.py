@@ -11,7 +11,7 @@ from ..auth_models import AppUser
 from ..ask_back_schemas import QualificationAnswerRead
 from ..database import get_db
 from ..errors import ApiError
-from ..membership import consume_copilot_question
+from ..membership import consume_copilot_question, ensure_case_not_expired
 from ..qualification.judgment import QualificationJudgmentError
 from ..revalidation_schemas import QualificationRevalidationRead
 from .actions import confirm_action
@@ -175,6 +175,7 @@ def copilot_chat(
     user: AppUser | None = Depends(get_optional_current_user),
 ):
     case = authorize_case_access(db, user, payload.case_id)
+    ensure_case_not_expired(db, user, case)
     guided = get_question(payload.job_id, payload.question_id)
     if guided is not None:
         ensure_question_available(case, guided)

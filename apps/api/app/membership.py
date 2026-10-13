@@ -35,6 +35,7 @@ from .auth_models import AppUser
 from .config import get_settings
 from .errors import ApiError
 from .membership_models import MembershipUsage
+from .models import BidNoticeVersion
 
 PlanCode = Literal["FREE", "BASIC", "UNLIMITED"]
 UsageKind = Literal["NOTICE_CHECK", "COPILOT_QUESTION"]
@@ -58,6 +59,25 @@ PLANS: dict[str, Plan] = {
 }
 # 멤버십 코드로 열리는 요금제. 시연에서는 가장 저렴한 유료 요금제를 연다.
 DEMO_CODE_PLAN: PlanCode = "BASIC"
+
+
+def version_expired(version: BidNoticeVersion) -> bool:
+    """입찰서 제출 마감이 지났는가. 마감을 모르는 공고는 만료로 보지 않는다."""
+    closed = version.bid_closed_at
+    if closed is None:
+        return False
+    if closed.tzinfo is None:
+        closed = closed.replace(tzinfo=timezone.utc)
+    return closed < datetime.now(timezone.utc)
+
+
+def ensure_case_not_expired(db: Session, user: AppUser | None, case) -> None:
+    """마감이 지난 공고의 Copilot 대화는 막는다(한도를 적용하는 계정). 이미 끝난 입찰에 모델 호출을 쓰지 않게 한다."""
+    if not limits_apply(user):
+        return
+    version = db.get(BidNoticeVersion, case.current_version_id)
+    if version is not None and version_expired(version):
+        raise ApiError(409, "CASE_EXPIRED", "입찰 마감이 지난 공고라 더 질문할 수 없습니다. 대화는 삭제할 수 있습니다.")
 
 
 def limits_apply(user: AppUser | None) -> bool:
