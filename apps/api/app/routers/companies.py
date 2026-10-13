@@ -409,6 +409,28 @@ def update_company(
     return _company_response(_load_company(db, company_id))
 
 
+@router.post("/{company_id}/reset", response_model=CompanyRead)
+def reset_company_profile(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> CompanyRead:
+    """프로필을 초기 상태로 되돌린다(2026-10-13): 수행 실적, 인증·등록, 인력(상시 근로자 수·역할), 사업자등록번호를 비운다.
+
+    회사명·업종·소재지·기업 구분은 남긴다. 이 넷은 회사를 만들 때 반드시 정하는 값이고, 비운 채 두면 판정기가
+    "값이 없다"가 아니라 "그 자격이 없다"로 읽을 수 있다(미충족). 회사 레코드와 계정·검토 건은 그대로다.
+    """
+    authorize_company_access(user, company_id, write=True)
+    company = _load_company(db, company_id)
+    company.performances = []
+    company.certifications = []
+    company.staff_roles = []
+    company.staff = None
+    company.business_registration_number = None
+    _commit(db, "프로필을 초기화하지 못했습니다.")
+    return _company_response(_load_company(db, company_id))
+
+
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_company(
     company_id: UUID,
