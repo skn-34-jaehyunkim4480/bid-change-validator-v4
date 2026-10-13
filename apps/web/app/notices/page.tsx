@@ -285,9 +285,9 @@ export default function NoticesPage() {
             타일은 이 목록의 검토 상태 필터다. 그래서 목록과 같은 섹션 안, 제목 바로 아래에 둔다.
             전에는 매칭 카드와 이 섹션 사이에 혼자 떠 있어서 어느 쪽에 속한 값인지 읽히지 않았다.
           */}
-          <div className="mt-5 grid overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="mt-5 grid overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
             {quickTiles.map(({ label, value, icon: Icon, filter }) => (
-              <button key={label} type="button" aria-pressed={statusFilter === filter} onClick={() => void initialize(activeQuery, 0, businessTypeFilter, filter)} className={`border-b border-r border-[var(--product-line)] px-3 py-4 text-center transition-colors last:border-r-0 hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#eef1ff]' : ''}`}>
+              <button key={label} type="button" aria-pressed={statusFilter === filter} onClick={() => void initialize(activeQuery, 0, businessTypeFilter, filter)} className={`border-b border-r border-[var(--product-line)] px-3 py-4 text-center transition-colors last:border-b-0 last:border-r-0 max-lg:last:col-span-2 max-sm:even:border-r-0 sm:max-lg:nth-[4]:border-b-0 sm:max-lg:nth-[3]:border-r-0 hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#eef1ff]' : ''}`}>
                 <Icon className={`mx-auto size-5 ${statusFilter === filter ? 'text-[var(--product-accent-deep)]' : 'text-[var(--product-accent)]'}`} />
                 <span className="mt-1.5 block text-[13px] font-medium text-[var(--product-muted)]">{label}</span>
                 <strong className="mt-0.5 block text-[21px] leading-7 text-[var(--product-ink)]">{value}</strong>

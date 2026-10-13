@@ -219,7 +219,7 @@ function NoticeCheckQuota({ className = '' }: { className?: string }) {
 }
 
 /** 마감이 지난 공고의 검토 건을 지운다. 한 번 더 눌러야 지워진다. */
-function DeleteExpiredCase({ caseId, onDeleted, className = '', confirmClassName = '' }: { caseId: string; onDeleted: () => void; className?: string; confirmClassName?: string }) {
+function DeleteExpiredCase({ caseId, onDeleted, className = '' }: { caseId: string; onDeleted: () => void; className?: string }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
@@ -240,7 +240,7 @@ function DeleteExpiredCase({ caseId, onDeleted, className = '', confirmClassName
     </button>
   );
   return (
-    <span className={`inline-flex flex-wrap items-center gap-1.5 text-[12px] ${confirmClassName || className}`}>
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-[12px] ${className}`}>
       <span className="font-semibold text-rose-700">{failure || '검토 기록이 함께 지워집니다.'}</span>
       <button type="button" className="rounded-full bg-rose-600 px-2.5 py-1 font-semibold text-white disabled:opacity-60" onClick={() => void remove()} disabled={busy}>{busy ? '삭제 중…' : '삭제'}</button>
       <button type="button" className="rounded-full border border-[#b9bec9] bg-white px-2.5 py-1 font-semibold text-[#4a5060]" onClick={() => { setAsking(false); setFailure(''); }} disabled={busy}>취소</button>
@@ -280,10 +280,10 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
                 <NavigationLink
                   href={`/qualification?caseId=${encodeURIComponent(item.id)}`}
                   className={`flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border p-5 transition-colors ${expired
-                    ? 'border-[#c3c7d0] bg-[#dfe2e8] hover:border-[#9aa0ad]'
+                    ? 'border-[#c3c7d0] bg-[#dfe2e8] pb-14 hover:border-[#9aa0ad]'
                     : 'border-[var(--product-line)] bg-white hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]'}`}
                 >
-                  <span className={`flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)] ${expired ? 'pr-16' : ''}`}>
+                  <span className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)]">
                     <span className="font-semibold tabular-nums">{item.bid_notice_no}</span>
                     {expired && <span className={EXPIRED_BADGE}>만료됨</span>}
                     {changed
@@ -301,10 +301,8 @@ function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () 
                     )}
                   </span>
                 </NavigationLink>
-                {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). 오른쪽 위에 두어 모든 카드의 아래쪽 줄(변경일·마감일)이 같은 높이에 놓이게 하고,
-                    확인을 물을 때만 아래쪽 줄을 덮는다. */}
-                {expired && <DeleteExpiredCase caseId={item.id} onDeleted={onChanged} className="absolute right-4 top-4"
-                  confirmClassName="absolute inset-x-3 bottom-3 min-h-8 justify-between rounded-xl bg-[#dfe2e8] px-2" />}
+                {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
+                {expired && <div className="absolute bottom-4 left-5 right-5 flex"><DeleteExpiredCase caseId={item.id} onDeleted={onChanged} /></div>}
               </li>
             );
           })}
