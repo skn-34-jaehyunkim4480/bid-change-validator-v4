@@ -132,3 +132,23 @@ The 20 audited notice versions map to **19 distinct notice IDs**, since indexes 
 - Private family and provenance reports: alternate_family_overlap_audit.json, alternate_notice_lineage_20.json, alternate_remaining_full_manifest.json.
 
 Next gate: gather truly distinct task families and profiles, independently reviewed test judgments, time/family/company splits, and assess full-universe independent retrieval. Unsupported ZIP/XLSX task specifics remain a data-quality issue.
+## 2026-10-13: Full frozen LOCAL candidate retrieval diagnostic (new result)
+
+This is an exploratory CPU retrieval test, NOT final accuracy validation or a reason to switch the production model.
+
+Local candidate universe: 383 current snapshot versions + 60 historically sampled versions, exact notice_version_id deduplication = **442 notices**. All three retrievers independently rank the same 442 candidate versions. Only **40** have actual task-source excerpts appended (27 direct extracts, 8 alternate preview snippets, 5 partial extracts); 402 are title-only.
+
+There are 29 synthetic firms with a nonempty capability query. Only 14 have known positive GPT-6 development labels: **21 positive company/version pairs across 13 unique positive notice versions**. These labels were deliberately selected and are not human-approved, randomized, time-heldout or complete judgments.
+
+Count of those 21 KNOWN development-positive pairs appearing within each searcher's top N:
+
+- Title-only control: BM25 top10=8, top50=8, top100=10; E5-small top10=3, top50=13, top100=16; RRF top10=3, top50=15, top100=16.
+- Same 442 versions including 40 business-task excerpts: BM25 top10=8, top50=15, top100=17; E5-small top10=10, top50=15, top100=16; HYBRID RRF top10=11, top50=16, top100=19.
+
+Source-bound business-task text increased KNOWN-positive candidate discovery, especially hybrid top10 from 3 to 11 and hybrid top100 from 16 to 19. However, the attachment enriched mostly already-labeled cases, so this gain is selection-biased. Unjudged records were never counted as negative. This is NOT nDCG, true full-corpus recall, unbiased evaluation, verified Champion approval, or the full AWS open-notice universe. It should not be compared with the earlier 15-document tiny nDCG experiment.
+
+CPU with cached loaded intfloat/multilingual-e5-small: source-backed BM25 29 queries 0.035 sec; E5 document+query inference 2.762 sec; E5 per-query p50 9.71 ms, excluding cold load.
+
+Reproducible offline script: apps/api/app/ml_recommendations/known_positive_diagnostic.py. The complete private result including query coverage and explicit NOT_MEASURED flags is stored OUTSIDE Git at ml-relevance-audit-private-20261013/positive_retrieval_diagnostic_v1.json. Input corpus digest SHA256: c57049e4b6f484133263c2fc79e5f5933074ac261335bd6acaf32ebd8937086a. Related regression suite 62 tests passed.
+
+October 15 2026 is the FINAL presentation and END of development. No evaluation or implementation after it is assumed. Keep production lexical fallback and existing API behavior unchanged. This result is a useful offline source-backed recommendation demonstration but does not justify immediately promoting E5 or hybrid into production.
