@@ -59,6 +59,13 @@ def main() -> None:
         "RDS_DATABASE_URL": url,
         "DOCUMENT_S3_BUCKET": BUCKET,
         "SITE_DOMAIN": SITE_DOMAIN,
+        # Opt-in only after the private files were staged and SHA-verified.
+        "ML_EXPERIMENTAL_ENABLED": (
+            "true" if Path("/opt/bidcheck/ml-experimental.enabled").is_file()
+            and all((Path("/opt/bidcheck/ml-experimental-artifacts") / f).is_file()
+                    for f in ("corpus.json", "vectors.json"))
+            else "false"
+        ),
         **secrets,
     }
     target = Path("/opt/bidcheck/.env")

@@ -21,6 +21,14 @@ x-rhwp: &rhwp
   source: /opt/bidcheck/rhwp-pr8-20261013/rhwp
   target: /usr/local/bin/rhwp
   read_only: true
+x-experimental: &experimental
+  type: bind
+  source: /opt/bidcheck/ml-experimental-artifacts
+  target: /data/ml-experimental
+  read_only: true
+  bind:
+    create_host_path: false
+
 x-ca: &ca
   type: bind
   source: /opt/bidcheck/rds-global-bundle.pem
@@ -66,9 +74,12 @@ services:
       AUTH_BOOTSTRAP_ADMIN_USERNAME: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:?Admin username is required}
       AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:?Admin password is required}
       DOCUMENT_RAG_INDEX_ROOT: /data/document-rag
+      ML_EXPERIMENTAL_ENABLED: ${ML_EXPERIMENTAL_ENABLED:-false}
+      ML_EXPERIMENTAL_ARTIFACT_DIR: /data/ml-experimental
     volumes:
       - *ca
       - *rhwp
+      - *experimental
       - document_rag_index_data:/data/document-rag
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
