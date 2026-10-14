@@ -103,11 +103,11 @@ test('recommendations uses a rounded profile-style header and plain-language des
   }));
   await page.goto('/recommendations');
   await expect(page.locator('.app-title-band')).toHaveCount(0);
-  const hero = page.locator('.product-hero');
+  const hero = page.locator('section[aria-labelledby="recommendations-page-title"]');
   await expect(hero).toHaveCount(1);
   await expect(hero).toHaveCSS('border-radius', '22px');
   await expect(hero.getByRole('heading', { name: 'AI 추천', level: 1 })).toBeVisible();
-  await expect(hero.getByText('홈 › AI 추천')).toBeVisible();
+  await expect(hero.getByText('홈 › AI 추천')).toHaveCount(0);
   await expect(hero.getByText('우리 회사에 어울리는 입찰 공고를 찾아드립니다.', { exact: false })).toBeVisible();
   await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
   await expect(page.getByText('BM25 기반 검색이며', { exact: false })).toHaveCount(0);
