@@ -8,7 +8,7 @@ import { NavigationLink } from '@/components/navigation-link';
 import { Button } from '@/components/ui/button';
 import { openMembershipIfRequired } from '@/lib/membership';
 import {
-  createPrepGuide, daysLeft, kst, listJudgedCases, materialCounts, saveGuide, savedGuide,
+  createPrepGuide, daysLeft, evaluationTotalPoints, kst, listJudgedCases, materialCounts, saveGuide, savedGuide,
   type GuideEvaluationItem, type JudgedCase, type PrepGuide,
 } from '@/lib/prep-guide';
 
@@ -163,6 +163,7 @@ function Card({ icon, title, note, children }: { icon: React.ReactNode; title: s
 
 function GuideView({ guide, selected, busy, error, onRegenerate }: { guide: PrepGuide; selected: JudgedCase; busy: boolean; error: string; onRegenerate: () => void }) {
   const counts = materialCounts(guide);
+  const totalPoints = evaluationTotalPoints(guide.evaluation_items);
   const left = daysLeft(selected.bid_closed_at);
   const factText = (id: string) => guide.profile_facts.find((fact) => fact.id === id);
   return (
@@ -172,7 +173,7 @@ function GuideView({ guide, selected, busy, error, onRegenerate }: { guide: Prep
         <h2 className="mt-1 text-[21px] font-extrabold leading-[1.4] tracking-[-0.02em]">{guide.notice.title}</h2>
         <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-[13.5px]">
           <div><dt className="text-white/70">입찰 마감</dt><dd className="font-semibold tabular-nums">{kst(selected.bid_closed_at)}{left !== null && (left < 0 ? ' (지남)' : ` (${left}일 남음)`)}</dd></div>
-          <div><dt className="text-white/70">평가 항목</dt><dd className="font-semibold tabular-nums">{guide.evaluation_items.length}개{guide.total_points ? ` · 배점 합 ${guide.total_points}` : ''}</dd></div>
+          <div><dt className="text-white/70">평가 항목</dt><dd className="font-semibold tabular-nums">{guide.evaluation_items.length}개{totalPoints !== null ? ` · 배점 합 ${totalPoints}` : ''}</dd></div>
           <div><dt className="text-white/70">준비 자료</dt><dd className="font-semibold tabular-nums">{counts.total}개 중 프로필에 있음 {counts.held} · 준비 필요 {counts.needed}</dd></div>
         </dl>
         <div className="mt-5 flex flex-wrap items-center gap-3 text-[12.5px] text-white/80">

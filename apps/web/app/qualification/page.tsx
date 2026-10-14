@@ -159,6 +159,10 @@ function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefi
 function companyValue(requirement: CanonicalRequirement, company: CompanyProfile | null, judgment: QualificationJudgment | null) {
   if (judgment?.basis_type === 'USER_ANSWER') return '사용자 답변으로 판정 · 회사 프로필에는 반영하지 않음';
   if (!company) return '회사 프로필 없음';
+  // Unfilled profile data is not proven absence. UNSATISFIED is emitted
+  // only after the corresponding collection is marked complete.
+  const missingOrConfirmedEmpty = (label: string) =>
+    judgment?.status === 'UNSATISFIED' ? label + ' 없음 확인 · 요건 미달' : label + ' 정보 미등록 · 확인 필요';
   switch (requirement.type) {
     case 'INDUSTRY': {
       // 회사의 업종을 전부 늘어놓지 않는다 — 이 요건이 묻는 업종만 보여 준다(같이 요구한 코드, 대신 인정되는 상위 면허 포함).
@@ -172,15 +176,15 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
     case 'REGION': return company.region_name ?? company.region_code ?? '비어 있음';
     case 'COMPANY_SIZE': return company.company_size;
     case 'STAFF': return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
-    case 'PERFORMANCE_COUNT': return `${company.performances.length}건`;
+    case 'PERFORMANCE_COUNT': if (!company.performances.length) return missingOrConfirmedEmpty('실적'); return `${company.performances.length}건`;
     case 'PERFORMANCE_AMOUNT': {
       const total = company.performances.reduce((sum, item) => sum + item.amount, 0);
       const max = Math.max(0, ...company.performances.map((item) => item.amount));
-      return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : '비어 있음';
+      return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : missingOrConfirmedEmpty('실적');
     }
     case 'REGISTRATION_CERTIFICATION': {
       // 같은 이유로, 이 요건과 이름(또는 번호)이 맞는 등록·인증만 보여 준다.
-      if (!company.certifications.length) return '비어 있음';
+      if (!company.certifications.length) return missingOrConfirmedEmpty('등록·인증');
       const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '').toLowerCase();
       const wanted = loose(`${requirement.value ?? ''}`);
       const held = company.certifications.filter((item) => {
@@ -191,7 +195,7 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
     }
     case 'EXPERIENCE_FIELD': {
       const fields = [...new Set(company.performances.flatMap((item) => item.fields))];
-      return fields.length ? fields.join(', ') : '비어 있음';
+      return fields.length ? fields.join(', ') : missingOrConfirmedEmpty('실적 분야');
     }
     default: return '프로필 값 확인';
   }
