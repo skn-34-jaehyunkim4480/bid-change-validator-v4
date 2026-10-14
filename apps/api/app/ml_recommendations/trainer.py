@@ -187,7 +187,7 @@ def deep_fit(rows,output,seed,device="cpu",epochs=2):
         path=Path(output)/(name+".pt")
         torch.save({"model":model.cpu().state_dict(),"type":name,"seed":seed,
                     "architecture":"scratch-byte-transformer-v1",
-                    "training_label_origin":"synthetic_or_reviewed"},path)
+                    "training_label_origin":"gpt_teacher" if {r.get("label_source") for r in rows} == {"gpt_teacher"} else "synthetic_or_reviewed"},path)
         logs[name]={"curve":curve,"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),
                     "bytes":path.stat().st_size}
     return logs
@@ -251,19 +251,26 @@ def main():
     git_result=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,
                               text=True,check=False)
     git_sha=git_result.stdout.strip() if git_result.returncode==0 else "unavailable"
+    teacher_only=dataset_info.get("evaluation_scope")=="GPT_TEACHER_IMITATION_ONLY"
     report={"dataset_version":dataset_info["dataset_version"],"dataset_sha256":actual_hash,
-            "evaluation_scope":"SYNTHETIC ONLY - not real ranking accuracy" if not dataset_info["reviewed_labels"] else "MIXED LABEL ORIGINS - report per origin before claiming real accuracy",
+            "evaluation_scope":("GPT_TEACHER_IMITATION_ONLY - not human-reviewed or real recommendation accuracy" if teacher_only else
+                "SYNTHETIC ONLY - not real ranking accuracy" if not dataset_info["reviewed_labels"] else
+                "MIXED LABEL ORIGINS - report per origin before claiming real accuracy"),
             "holdout_queries":len(test),"device":args.device,"seed":seed,"epochs":args.epochs,
             "git_sha":git_sha,"model_sha256":sha,
             "model_bytes":{name:(out/name).stat().st_size for name in files},
             "training_seconds":{"lightgbm":lightgbm_seconds,"encoders":encoder_seconds},
             "training":training,"metrics":scores,
             "leakage":audit(rows),"aws_requests":0,"aws_download_bytes":0,"paid_services_changed":False}
+    if teacher_only:
+        report["human_reviewed_labels"]=0
+        report["champion_eligible"]=False
+        report["teacher_labels"]=dataset_info["graded_pairs"]
     (out/"evaluation.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
     if args.mlflow_local:
         import mlflow
         mlflow.set_tracking_uri("sqlite:///" + (out/"mlflow.db").resolve().as_posix())
-        with mlflow.start_run(run_name="bidcheck-offline-pseudo-eval"):
+        with mlflow.start_run(run_name="bidcheck-offline-gpt-teacher-eval" if teacher_only else "bidcheck-offline-pseudo-eval"):
             mlflow.log_params(dict(seed=seed,epochs=args.epochs,dataset_sha256=actual_hash,
                                    device=args.device,git_sha=git_sha,
                                    evaluation_scope=report["evaluation_scope"]))
