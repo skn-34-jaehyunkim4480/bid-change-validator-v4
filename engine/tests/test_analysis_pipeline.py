@@ -342,3 +342,32 @@ def test_extracted_industry_code_reaches_existing_deterministic_judge():
                 reference_date=date(2026, 9, 10),
             )
             assert judgment.status == expected
+
+
+def test_scoring_table_performance_does_not_become_mandatory_in_full_pipeline():
+    quote = "최근 3년간 실적(단일규모 5천만원 이상)"
+    data = QualificationAnalysisInput(
+        notice_id="J22", notice_version_id="J22-v2",
+        documents=[QualificationDocumentInput(
+            document_id="J22-proposal",
+            file_sha256="file", extracted_text_sha256="sha",
+            extracted_blocks=[{
+                "block_index": 0,
+                "text": "2) 평가항목별 점수기준(정성평가 70점)\n- 사업실적 / " + quote + " | 6점",
+            }],
+        )],
+    )
+
+    def score_extractor(system, body, schema):
+        return {"requirements": [{
+            "유형": "실적요건", "raw": quote,
+            "금액_raw": "5천만원 이상",
+            "기간_raw": "최근 3년간",
+        }]}
+
+    result = analyze_qualification_documents(
+        data, structured_extract=score_extractor, summarize_gaps=False,
+    )
+    assert result.requirements
+    assert all(req.requirement_role == "informational" and req.required is False for req in result.requirements)
+    assert any(diagnostic.code == "CLAUSE_NOT_LABELLED" for diagnostic in result.diagnostics)

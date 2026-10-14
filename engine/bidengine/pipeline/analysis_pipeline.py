@@ -45,6 +45,7 @@ ValueNormalizer = Callable[[str], dict[str, Any]]
 
 
 from bidengine.pipeline.notice_limits import NoticeLimits, mark_accepted_licences, merge_notice_limits  # noqa: E402
+from bidengine.pipeline.evaluation_role_guard import guard_scoring_only_performance
 
 class QualificationDocumentInput(BaseModel):
     """Minimal Backend -> AI document input used by the orchestration layer."""
@@ -351,6 +352,13 @@ def analyze_qualification_documents(
                 {"code": "UNMAPPED_REQUIREMENT", "raw": item.raw} if orphan
                 else {"code": "CLAUSE_NOT_LABELLED", "raw": item.raw, "reason": "CHECKLIST_FRAGMENT"}
             )
+    # A scored evaluation table is not a bidder eligibility condition.
+    # Require explicit score-table headings and only downgrade cited performance
+    # items; missing/mixed provenance is left mandatory for review.
+    canonicalized["requirements"], scoring_diagnostics = guard_scoring_only_performance(
+        list(canonicalized["requirements"]), list(canonicalized["evidence"]), chunks,
+    )
+    canonicalized["diagnostics"].extend(scoring_diagnostics)
     # 나라장터가 구조화해 둔 면허제한·참가가능지역으로 문서에서 뽑은 요건을 보강한다(notice_limits.py).
     canonicalized["requirements"], limit_diagnostics = merge_notice_limits(
         list(canonicalized["requirements"]), notice_limits, notice_version_id=analysis_input.notice_version_id,
