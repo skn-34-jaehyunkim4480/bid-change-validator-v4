@@ -658,6 +658,10 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
         try:
             result = structured_extract(SYSTEM_PROMPT, body, SLOT_SCHEMA)
         except Exception as error:
+            # Honor the retry budget for temporary extractor errors too.
+            # Source validation remains strict and unchanged.
+            if attempt < max_retry:
+                continue
             return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": f"구조화 추출 호출 실패: {type(error).__name__}", "target_chunk_ids": [chunk.get("chunk_id") for chunk in target], **coverage_inputs, "candidate_count": 0}
 
         accepted: list[dict[str, Any]] = []

@@ -234,6 +234,50 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
     ]
 
 
+def test_extract_legacy_slots_retries_transient_extractor_failure():
+    calls = {"count": 0}
+
+    def flaky_extract(system, body, schema):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise TimeoutError("temporary LLM timeout")
+        return {"requirements": []}
+
+    result = extract_legacy_slots(_chunks(), structured_extract=flaky_extract, max_retry=1)
+
+    assert calls["count"] == 2
+    assert result["status"] == "ok"
+    assert result["dropped_requirements"] == []
+
+
+def test_extract_legacy_slots_failed_after_retry_budget_exhausted():
+    calls = {"count": 0}
+
+    def unavailable_extract(system, body, schema):
+        calls["count"] += 1
+        raise ConnectionError("model service unavailable")
+
+    result = extract_legacy_slots(_chunks(), structured_extract=unavailable_extract, max_retry=1)
+
+    assert calls["count"] == 2
+    assert result["status"] == "failed"
+    assert result["slots"] == []
+    assert "ConnectionError" in result["notes"]
+
+
+def test_extract_legacy_slots_zero_retries_preserves_fail_fast_behavior():
+    calls = {"count": 0}
+
+    def unavailable_extract(system, body, schema):
+        calls["count"] += 1
+        raise TimeoutError("timeout")
+
+    result = extract_legacy_slots(_chunks(), structured_extract=unavailable_extract, max_retry=0)
+
+    assert calls["count"] == 1
+    assert result["status"] == "failed"
+
+
 def test_quote_suffix_cannot_be_fabricated_after_matching_prefix():
     raw = "서울특별시에주된영업소를두고입찰공고일전일부터계약체결일까지계속하여해당소재지에서사업을운영하는업체는"
     assert not validate_extracted_slot({"raw": raw + " 모든 자격이 면제된다."}, [{"text": raw + " 등록하여야 한다."}])[0]
