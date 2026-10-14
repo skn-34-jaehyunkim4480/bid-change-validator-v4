@@ -174,7 +174,7 @@ function GuideView({ guide, selected, busy, error, onRegenerate }: { guide: Prep
         <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-[13.5px]">
           <div><dt className="text-white/70">입찰 마감</dt><dd className="font-semibold tabular-nums">{kst(selected.bid_closed_at)}{left !== null && (left < 0 ? ' (지남)' : ` (${left}일 남음)`)}</dd></div>
           <div><dt className="text-white/70">평가 항목</dt><dd className="font-semibold tabular-nums">{guide.evaluation_items.length}개{totalPoints !== null ? ` · 배점 합 ${totalPoints}` : ''}</dd></div>
-          <div><dt className="text-white/70">준비 자료</dt><dd className="font-semibold tabular-nums">{counts.total}개 중 프로필에 있음 {counts.held} · 준비 필요 {counts.needed}</dd></div>
+          <div><dt className="text-white/70">준비 자료</dt><dd className="font-semibold tabular-nums">총 {counts.total}개 · 회사 정보 연결 {counts.profileLinked}개 · 서류 보유 여부 미확인</dd></div>
         </dl>
         <div className="mt-5 flex flex-wrap items-center gap-3 text-[12.5px] text-white/80">
           <button type="button" disabled={busy} onClick={onRegenerate} className="inline-flex items-center gap-1.5 rounded-full border border-white/40 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-60">
@@ -217,7 +217,7 @@ function GuideView({ guide, selected, busy, error, onRegenerate }: { guide: Prep
       </Card>
 
       {guide.evaluation_items.length > 0 && (
-        <Card icon={<ClipboardCheck className="size-5 text-[var(--product-accent)]" />} title="평가 항목별 준비물" note="배점이 큰 항목부터입니다. 「프로필에 있음」은 회사 프로필에 근거가 되는 항목이 있다는 뜻이고, 증빙 서류가 준비됐다는 뜻은 아닙니다.">
+        <Card icon={<ClipboardCheck className="size-5 text-[var(--product-accent)]" />} title="평가 항목별 준비물" note="배점이 큰 항목부터입니다. 회사 정보는 참고용이며, 실제 증빙서류 보유·준비 완료 여부는 확인되지 않았습니다.">
           <ul className="grid gap-4">
             {guide.evaluation_items.map((item) => <EvaluationItem key={item.name} item={item} factText={factText} />)}
           </ul>
@@ -255,7 +255,7 @@ function EvaluationItem({ item, factText }: { item: GuideEvaluationItem; factTex
             const facts = material.company_facts.map(factText).filter((fact): fact is { kind: string; text: string } => Boolean(fact));
             return (
               <li key={material.text} className="flex flex-wrap items-start gap-x-2 gap-y-1 text-[13.5px] leading-[1.6]">
-                <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${facts.length ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{facts.length ? '프로필에 있음' : '준비 필요'}</span>
+                <span className="mt-0.5 shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11.5px] font-semibold text-amber-800">보유 미확인</span>
                 <span className="min-w-0 flex-1">{material.text}
                   {facts.map((fact) => <span key={fact.text} className="mt-0.5 block text-[12.5px] text-[var(--product-muted)]">↳ {fact.kind}: {fact.text}</span>)}
                 </span>

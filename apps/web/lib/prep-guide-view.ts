@@ -66,11 +66,14 @@ export function evaluationTotalPoints(items: GuideEvaluationItem[]): number | nu
   return extras.total == null ? null : technical.total + prices.total + extras.total;
 }
 
-/** 준비 자료가 회사 프로필에 이미 있는 것인지. 연결된 프로필 항목이 있으면 '프로필에 있음' 이다. */
+/** Profile-linked facts do not verify possession of supporting documents. */
 export function materialCounts(guide: PrepGuide) {
   const materials = guide.evaluation_items.flatMap((item) => item.materials);
-  const held = materials.filter((material) => material.company_facts.length > 0).length;
-  return { total: materials.length, held, needed: materials.length - held };
+  const knownFactIds = new Set((guide.profile_facts ?? []).map((fact) => fact.id));
+  const profileLinked = materials.filter((material) =>
+    material.company_facts.some((id) => knownFactIds.has(id)),
+  ).length;
+  return { total: materials.length, profileLinked };
 }
 
 /** 마감까지 남은 날. 지났으면 음수, 마감을 모르면 null. */

@@ -3,15 +3,16 @@ import test from 'node:test';
 
 import { daysLeft, evaluationTotalPoints, kst, materialCounts, type PrepGuide } from './prep-guide-view.ts';
 
-void test('materials linked to a profile fact count as held', () => {
+void test('profile facts do not prove possession of supporting documents', () => {
   const guide = {
+    profile_facts: [{ id: 'C1', kind: '업종', text: '여행업' }],
     evaluation_items: [
       { materials: [{ text: '실적 증명', company_facts: ['C1'] }, { text: '방법론 자료', company_facts: [] }] },
-      { materials: [{ text: '인력 증빙', company_facts: [] }] },
-      { materials: [] },
+      { materials: [{ text: '인력 증빙', company_facts: ['invalid-reference'] }] },
     ],
   } as unknown as PrepGuide;
-  assert.deepEqual(materialCounts(guide), { total: 3, held: 1, needed: 2 });
+  assert.deepEqual(materialCounts(guide), { total: 3, profileLinked: 1 });
+  assert.deepEqual(materialCounts({ ...guide, profile_facts: [] }), { total: 3, profileLinked: 0 });
 });
 
 void test('days left counts whole days and goes negative after the deadline', () => {
