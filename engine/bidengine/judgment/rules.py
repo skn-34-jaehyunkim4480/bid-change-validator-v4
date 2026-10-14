@@ -647,7 +647,7 @@ def _judge_industry(
 
 
 # 건설산업기본법의 종합공사업: 토목·건축·토목건축·산업환경설비·조경.
-_GENERAL_CONSTRUCTION_CODES = {"0001", "0002", "0003", "0004", "0005"}
+_GENERAL_CONSTRUCTION_CODES = {"0001", "0002", "0003", "0005"}  # 0004 is absent from the live G2B master.
 
 
 def _judge_staff(
