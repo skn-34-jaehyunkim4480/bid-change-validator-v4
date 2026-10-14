@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
+  // Keep all mocked-browser suites serial against one vinext dev server in CI.
+  workers: process.env.CI ? 1 : undefined,
   retries: 0,
   reporter: [['list']],
   use: {
