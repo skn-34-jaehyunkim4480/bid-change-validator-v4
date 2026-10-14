@@ -101,6 +101,21 @@ jobs:
             docker build -f apps/api/Dockerfile -t "$REGISTRY/bidcheck-v4-api:$DEPLOY_SHA" .
             docker push "$REGISTRY/bidcheck-v4-api:$DEPLOY_SHA"
           fi
+      - name: Build and publish immutable Django QA image
+        if: steps.target.outputs.current == 'true'
+        run: |
+          # Reuse the already-authorized API ECR repository with a distinct django- SHA tag.
+          tag="django-$DEPLOY_SHA"
+          image="$REGISTRY/bidcheck-v4-api:$tag"
+          if ! aws ecr describe-images --repository-name bidcheck-v4-api --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            for attempt in 1 2 3 4; do
+              if docker build -f apps/django_qa/Dockerfile -t "$image" .; then break; fi
+              if [ "$attempt" -eq 4 ]; then echo "Django Docker image build failed" >&2; exit 1; fi
+              echo "Retrying base image pull after registry throttling: attempt $attempt" >&2
+              sleep 20
+            done
+            docker push "$image"
+          fi
       - name: Build and publish immutable Web image
         if: steps.target.outputs.current == 'true'
         run: |
@@ -113,7 +128,8 @@ jobs:
         if: steps.target.outputs.current == 'true'
         run: |
           tar -czf runtime.tar.gz -C deploy/aws \
-            docker-compose.yml Caddyfile prepare-env.py deploy.sh install-runtime.sh smoke_storage.py
+            docker-compose.yml docker-compose.django-qa.yml Caddyfile Caddyfile.django-qa \
+            prepare-env.py deploy.sh install-runtime.sh smoke_storage.py
           aws s3 cp runtime.tar.gz "s3://$BUCKET/deploy/runtime-$DEPLOY_SHA.tar.gz" --only-show-errors
 
   deploy:
