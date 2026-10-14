@@ -533,12 +533,13 @@ export default function CompanyPage() {
           </section>
         ) : (
           <>
-            <section className="product-hero">
-              <div className="flex flex-col items-center gap-4 text-center">
+            {/* 머리 상자: 내 입찰 건 목록과 같은 모양 — 흰 바탕에 얇은 파란 테두리(2026-10-14). */}
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
+              <div className="contents">
                 <div>
-                  <h1 className="text-[28px] font-extrabold tracking-[-0.035em]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
+                  <h1 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{company.name}</Badge>
                   <Button variant="outline" size="sm" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} />새로고침</Button>
                   <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)} disabled={busy !== null}><RotateCcw />프로필 초기화</Button>
