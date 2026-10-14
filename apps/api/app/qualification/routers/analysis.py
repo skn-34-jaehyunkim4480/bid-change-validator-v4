@@ -19,6 +19,7 @@ from ...membership import ensure_notice_check_allowed
 from ...models import BidNoticeVersion, NoticeProcessingAttempt, NoticeProcessingJob
 from ...services.notice_processing import claim_approved_analysis_job, enqueue_version_job, finish_job
 from ...services.participation_limits import participation_limits_fetcher
+from ..document_readiness import qualification_documents
 from ..analysis import (
     QualificationAnalysisError,
     analysis_run_response,
@@ -63,11 +64,9 @@ def request_qualification_analysis(
     ))
     if version is None:
         raise ApiError(404, "NOTICE_VERSION_NOT_FOUND", "공고 차수를 찾을 수 없습니다.")
-    ready = bool(version.documents) and all(
-        doc.download_status == "DOWNLOADED" and doc.extraction_status == "EXTRACTED"
-        for doc in version.documents
-    )
-    if not ready:
+    readiness = qualification_documents(version.documents)
+    ready = readiness.ready
+    if readiness.waiting:
         enqueue_version_job(db, version_id=version.id, stage="EXTRACT")
     job = enqueue_version_job(
         db, version_id=version.id, stage="ANALYZE", allow_unapproved_analysis=True,
@@ -110,11 +109,8 @@ def trigger_qualification_analysis(
             )
             if existing is not None and existing.status != "FAILED":
                 return analysis_run_response(existing)
-        if not version.documents or any(
-            doc.download_status != "DOWNLOADED" or doc.extraction_status != "EXTRACTED"
-            for doc in version.documents
-        ):
-            raise ApiError(409, "DOCUMENTS_NOT_READY", "첨부파일 추출 완료 후 분석할 수 있습니다.")
+        if not qualification_documents(version.documents).ready:
+            raise ApiError(409, "DOCUMENTS_NOT_READY", "분석할 수 있는 첨부파일의 추출 완료 후 분석할 수 있습니다.")
     extractor = OpenAIStructuredExtractor()
     if not extractor.available:
         raise ApiError(
