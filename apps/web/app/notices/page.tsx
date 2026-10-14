@@ -224,7 +224,8 @@ export default function NoticesPage() {
           {/* 눈썹(「공고 조회」)과 제목(「조회된 공고」)이 같은 말이었다. 제목만 남긴다. */}
           {/* 검색 상자는 제목 위에, 목록 폭을 다 쓰는 크기로 둔다(2026-10-14). 단추 없이 Enter 로 찾는다.
               머리말은 위쪽 「우리 회사의 판정 이력」과 같은 모양으로 가운데에 둔다. */}
-          <h2 className="mb-5 text-center text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">공고 찾기</h2>
+          <h2 className="text-center text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">공고 찾기</h2>
+          <p className="mb-5 mt-2 text-center text-[14.5px] text-[var(--product-muted)]">공고 제목, 공고 번호, 기관 이름으로 공고를 찾을 수 있습니다.</p>
           <form className="flex" onSubmit={(event) => { event.preventDefault(); void initialize(queryDraft.trim(), 0, businessTypeFilter, statusFilter); }}>
             <label className="sr-only" htmlFor="notice-list-search">조회된 공고에서 찾기</label>
             <div className="flex h-14 min-w-0 flex-1 items-center gap-3 rounded-full border-2 border-[var(--product-accent)] bg-white px-6 shadow-[0_6px_20px_rgba(43,79,216,0.12)] focus-within:border-[var(--product-accent-deep)] focus-within:shadow-[0_6px_24px_rgba(43,79,216,0.22)]">

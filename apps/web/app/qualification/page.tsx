@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { ActionCard } from '@/components/copilot/action-card';
@@ -1068,6 +1068,8 @@ function QualificationWorkspace({ requestedCaseId, listRequested, autostart }: {
           {activeCase.expired && <DeleteExpiredCase caseId={activeCase.id} onDeleted={() => { forgetCase(activeCase.id); router.replace('/qualification?view=list'); }} />}
           {cases.length > 1 && <NavigationLink href="/qualification?view=list" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
           <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
+          <a href={g2bNoticeUrl(currentVersion?.detail_url, activeCase.bid_notice_no)} target="_blank" rel="noopener noreferrer"
+            className={buttonVariants({ variant: 'outline' })} aria-label="나라장터에서 공고 원문 보기 (새 창으로 열림)"><ExternalLink /> 나라장터 원문</a>
           <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
         </div>
       </section>
@@ -1442,4 +1444,13 @@ function QualificationWorkspace({ requestedCaseId, listRequested, autostart }: {
       </div>
     </main>
   );
+}
+
+/**
+ * 나라장터 공고 상세 주소. 수집한 상세 주소가 나라장터 것이면 그대로 쓰고, 없으면 공고번호로 만든다.
+ * 다른 곳을 가리키는 주소는 쓰지 않는다(2026-10-14).
+ */
+function g2bNoticeUrl(detailUrl: string | null | undefined, bidNoticeNo: string) {
+  if (detailUrl && detailUrl.startsWith('https://www.g2b.go.kr/')) return detailUrl;
+  return `https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=${encodeURIComponent(bidNoticeNo)}`;
 }
