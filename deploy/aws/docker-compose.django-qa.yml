@@ -2,9 +2,7 @@
 # docker compose -f docker-compose.yml -f docker-compose.django-qa.yml up -d --build django-qa caddy
 services:
   django-qa:
-    build:
-      context: ../..
-      dockerfile: apps/django_qa/Dockerfile
+    image: ${DJANGO_QA_IMAGE:?Immutable Django image is required}
     restart: unless-stopped
     environment:
       DJANGO_QA_PRODUCTION: 'true'
