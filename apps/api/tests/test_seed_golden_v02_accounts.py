@@ -184,3 +184,17 @@ def test_seed_attaches_evidence_excerpt_documents_so_judgments_are_grounded() ->
     finally:
         db.rollback()
         db.close()
+
+
+
+def test_j22_shared_demo_missing_info_is_unknown_not_verified_zero():
+    from apps.api.app.scripts.seed_golden_v02_accounts import _shared_demo_completeness
+    fake = {"performances": [], "certifications": [], "completeness": {"performances": True, "certifications": True}}
+    standalone = _shared_demo_completeness("J22", fake, shared_db=False)
+    shared = _shared_demo_completeness("J22", fake, shared_db=True)
+    assert standalone["performances"] and standalone["certifications"]
+    assert not shared["performances"] and not shared["certifications"]
+    # A real record must not be hidden or downgraded by a shared fixture adapter.
+    with_record = {**fake, "performances": [{"name": "확인된 실적"}]}
+    assert _shared_demo_completeness("J22", with_record, shared_db=True)["performances"]
+    assert _shared_demo_completeness("J21", fake, shared_db=True)["performances"]

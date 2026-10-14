@@ -129,3 +129,45 @@ def test_company_facts_come_only_from_the_profile():
     assert [fact["id"] for fact in facts] == ["C1", "C2", "C3", "C4", "C5"]
     assert facts[0]["text"] == "소재지 서울특별시, 소기업, 상시 근로자 8명"
     assert facts[2]["text"] == "민원 포털 유지관리, 발주처 A시청, 계약금액 120,000,000원, 2025년 완료"
+
+
+
+def test_j22_parent_technical_90_and_price_10_are_not_double_counted():
+    rows = [
+        {"name": "기술능력평가", "points": 90, "kind": "기술"},
+        {"name": "어학연수 프로그램", "points": 15, "kind": "기술"},
+        {"name": "교육·문화체험 프로그램", "points": 10, "kind": "기술"},
+        {"name": "경영상태", "points": 6, "kind": "기술"},
+        {"name": "인력 보유상태", "points": 6, "kind": "기술"},
+        {"name": "사업수행 실적", "points": 6, "kind": "기술"},
+        {"name": "신인도", "points": 2, "kind": "기술"},
+        {"name": "가격평가", "points": 10, "kind": "가격"},
+        {"name": "홈스테이 및 생활관리", "points": None, "kind": "기술"},
+    ]
+    assert sum(row["points"] or 0 for row in rows) == 145
+    assert prep_guide.evaluation_total_points(rows) == 100
+
+
+def test_partial_or_ambiguous_scoring_never_claims_exact_total():
+    assert prep_guide.evaluation_total_points([
+        {"name": "프로그램", "kind": "기술", "points": 15},
+        {"name": "안전관리", "kind": "기술", "points": None},
+        {"name": "가격평가", "kind": "가격", "points": 10},
+    ]) is None
+    assert prep_guide.evaluation_total_points([
+        {"name": "기술능력평가", "kind": "기술", "points": 90},
+        {"name": "기술평가", "kind": "기술", "points": 85},
+    ]) is None
+
+
+def test_parent_total_is_grounded_by_source_before_counting():
+    source = "평가점수 기술능력평가 90점 / 입찰가격평가 10점. 어학연수 프로그램 15점."
+    extracted = {
+        "evaluation_items": [
+            {"name": "기술능력평가", "points": 90, "kind": "기술", "quote": "기술능력평가 90점"},
+            {"name": "입찰가격평가", "points": 10, "kind": "가격", "quote": "입찰가격평가 10점"},
+            {"name": "어학연수 프로그램", "points": 15, "kind": "기술", "quote": "어학연수 프로그램 15점"},
+        ]
+    }
+    guide, _ = build(extracted=extracted, drafted={"evaluation_guides": [], "steps": []}, docs=(("제안요청서.hwp", source),))
+    assert guide["total_points"] == 100
