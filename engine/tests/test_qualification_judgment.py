@@ -240,3 +240,12 @@ def test_no_performance_in_period_is_still_unsatisfied():
     profile = _profile(completeness=ProfileCompleteness(performances=True)).model_copy(update={"performances": [old]})
     judgment = judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).judgments[0]
     assert judgment.status == "UNSATISFIED"
+
+
+def test_real_g2b_general_contractor_codes_exclude_phantom_0004():
+    from bidengine.judgment.rules import _GENERAL_CONSTRUCTION_CODES
+
+    # Verified against the complete 2026-10-14 live G2B master.
+    # Old pytest seeded 0004 as telecommunications; official is 0036.
+    assert "0004" not in _GENERAL_CONSTRUCTION_CODES
+    assert _GENERAL_CONSTRUCTION_CODES == {"0001", "0002", "0003", "0005"}
