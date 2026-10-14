@@ -534,7 +534,7 @@ export default function CompanyPage() {
         ) : (
           <>
             {/* 머리 상자: 내 입찰 건 목록과 같은 모양 — 흰 바탕에 얇은 파란 테두리(2026-10-14). */}
-            <section className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border-2 border-[color-mix(in_srgb,var(--product-accent-deep)_80%,white)] bg-white px-7 py-8">
               <div className="contents">
                 <div>
                   <h1 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
