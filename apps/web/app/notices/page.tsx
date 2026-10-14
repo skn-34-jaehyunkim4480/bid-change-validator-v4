@@ -53,6 +53,8 @@ export default function NoticesPage() {
   const [statusCounts, setStatusCounts] = useState<Record<OverallStatus, number>>(() => previousNotices()?.counts ?? EMPTY_COUNTS);
   const [company, setCompany] = useState<CompanyProfile | null>(() => previousNotices()?.company ?? null);
   const [activeQuery, setActiveQuery] = useState(() => previousNotices()?.query ?? '');
+  // 「조회된 공고」 검색 상자에 치는 중인 낱말. 찾기를 눌러야 activeQuery 가 된다.
+  const [queryDraft, setQueryDraft] = useState(() => previousNotices()?.query ?? '');
   const [pageIndex, setPageIndex] = useState(() => previousNotices()?.page ?? 0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => previousNotices()?.status ?? 'all');
   const [businessTypeFilter, setBusinessTypeFilter] = useState(() => previousNotices()?.businessType ?? 'all');
@@ -72,6 +74,7 @@ export default function NoticesPage() {
     const generation = ++searchGeneration.current;
     const normalizedQuery = searchQuery.trim();
     setActiveQuery(normalizedQuery);
+    setQueryDraft(normalizedQuery);   // 상단 메뉴 바에서 찾아도 이 상자에 같은 낱말이 보이게
     setPageIndex(nextPage);
     setStatusFilter(selectedStatus);
     setLoading(true);
@@ -219,7 +222,17 @@ export default function NoticesPage() {
 
         <section>
           {/* 눈썹(「공고 조회」)과 제목(「조회된 공고」)이 같은 말이었다. 제목만 남긴다. */}
-          <h2 className="text-[28px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
+          {/* 검색 상자는 제목 위에, 목록 폭을 다 쓰는 크기로 둔다(2026-10-14). 단추 없이 Enter 로 찾는다. */}
+          <form className="flex" onSubmit={(event) => { event.preventDefault(); void initialize(queryDraft.trim(), 0, businessTypeFilter, statusFilter); }}>
+            <label className="sr-only" htmlFor="notice-list-search">조회된 공고에서 찾기</label>
+            <div className="flex h-14 min-w-0 flex-1 items-center gap-3 rounded-full border-2 border-[var(--product-accent)] bg-white px-6 shadow-[0_6px_20px_rgba(43,79,216,0.12)] focus-within:border-[var(--product-accent-deep)] focus-within:shadow-[0_6px_24px_rgba(43,79,216,0.22)]">
+              <Search className="size-5 shrink-0 text-[var(--product-accent)]" aria-hidden="true" />
+              <input id="notice-list-search" type="search" value={queryDraft} maxLength={200} placeholder="공고번호 · 공고명 · 기관명으로 찾기"
+                className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-[var(--product-ink)] outline-none placeholder:text-[var(--product-muted)]" onChange={(event) => setQueryDraft(event.target.value)} />
+            </div>
+          </form>
+          {activeQuery && !loading && <p className="mt-2.5 text-[13.5px] text-[var(--product-muted)]">「{activeQuery}」 검색 결과 {noticeTotal.toLocaleString()}건 · <button type="button" className="font-semibold text-[var(--product-accent-deep)] underline" onClick={() => { setQueryDraft(''); void initialize('', 0, businessTypeFilter, statusFilter); }}>검색 지우기</button></p>}
+          <h2 className="mt-8 text-[28px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
 
           {/*
             타일은 이 목록의 검토 상태 필터다. 그래서 목록과 같은 섹션 안, 제목 바로 아래에 둔다.

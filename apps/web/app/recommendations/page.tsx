@@ -137,14 +137,14 @@ export default function RecommendationsPage() {
 
   return (
     <main className="app-shell-container min-w-0 py-8 pb-20 sm:py-12">
-      <section className="product-hero" aria-labelledby="recommendations-page-title">
-        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+      {/* 머리 상자: 내 입찰 건 목록과 같은 모양 — 흰 바탕에 얇은 파란 테두리(2026-10-14). */}
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border-2 border-[color-mix(in_srgb,var(--product-accent-deep)_80%,white)] bg-white px-7 py-8" aria-labelledby="recommendations-page-title">
+        <div className="contents">
           <div>
-            <p className="text-xs font-medium text-white/75">홈 › AI 추천</p>
-            <h1 id="recommendations-page-title" className="mt-2 text-[28px] font-extrabold tracking-[-0.035em]">
+            <h1 id="recommendations-page-title" className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">
               AI 추천
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6">
+            <p className="mt-2 max-w-[70ch] break-keep text-[14px] text-[var(--product-muted)]">
               우리 회사에 어울리는 입찰 공고를 찾아드립니다. 관심 있는 공고는 참가자격도 확인해 보세요.
             </p>
           </div>

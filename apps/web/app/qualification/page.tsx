@@ -10,7 +10,7 @@ import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { CASE_SORT_OPTIONS, filterCases, sortCases, type CaseSort } from '@/lib/case-list';
-import { forgetCase, lastCaseId, rememberCase } from '@/lib/last-case';
+import { forgetCase, rememberCase, rememberList, returnCaseId } from '@/lib/last-case';
 import { AUTOSTART_PARAM } from '@/lib/open-judgment';
 import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
 import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
@@ -531,7 +531,8 @@ function QualificationWorkspace({ requestedCaseId, listRequested, autostart }: {
       }
       // 여럿이면: 방금까지 보던 공고가 있으면 그것을 다시 열고, 없거나 목록을 달라고 했으면 카드 목록에서 고른다(CaseGrid).
       if (caseResult.items.length > 1) {
-        const last = listRequested ? null : lastCaseId();
+        if (listRequested) rememberList();
+        const last = listRequested ? null : returnCaseId();
         if (last && caseResult.items.some((item) => item.id === last)) {
           router.replace(`/qualification?caseId=${encodeURIComponent(last)}`);
         } else if (last) forgetCase(last);

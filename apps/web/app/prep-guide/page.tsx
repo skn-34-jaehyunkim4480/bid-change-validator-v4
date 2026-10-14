@@ -79,11 +79,10 @@ export default function PrepGuidePage() {
 
   return (
     <main className="app-shell-container min-w-0 py-8 pb-20 sm:py-10">
-      <header>
+      <header className="text-center">
         <h1 className="text-[28px] font-extrabold tracking-[-0.035em]">입찰 준비 지침서</h1>
-        <p className="mt-2 max-w-[70ch] text-[14.5px] leading-[1.7] text-[var(--product-muted)]">
+        <p className="mx-auto mt-2 max-w-[70ch] text-[14.5px] leading-[1.7] text-[var(--product-muted)]">
           참가자격 판정을 마친 공고를 고르면, 공고 문서의 평가 항목·제출 서류·일정과 회사 프로필을 맞대어 무엇을 어떤 순서로 준비할지 정리합니다.
-          제안서를 대신 쓰지 않으며, 점수는 예측하지 않습니다.
         </p>
       </header>
 

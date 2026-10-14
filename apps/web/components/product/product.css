@@ -183,15 +183,15 @@ body {
   white-space: nowrap;
 }
 
+/* 제목 띠도 파란 바탕 없이 가운데 제목과 회색 설명으로(2026-10-14). */
 .app-title-band {
-  /* Keep the qualification-review header height for all pages. */
-  height: 142px;
-  /* 공고 찾기 검색 상자 아래 띠와 같은 진한 파랑. 그라데이션은 공고 찾기 첫 화면에만 남긴다(2026-10-12). */
-  background: var(--product-accent-deep);
+  height: auto;
+  padding: 34px 0 6px;
+  background: none;
 }
 
 .app-title-band-tall {
-  height: 142px;
+  height: auto;
 }
 
 .app-shell-content {
@@ -242,7 +242,7 @@ body {
 
   .app-title-band,
   .app-title-band-tall {
-    height: 118px;
+    height: auto;
   }
 
   .app-header-actions span {
@@ -336,25 +336,18 @@ body {
   화면 머리 상자(2026-10-12): 제목 띠를 없앤 화면(내 입찰 건·회사 프로필)의 첫 덩어리를 둥근 상자로 묶고,
   예전 제목 띠의 배색(진한 파랑 바탕에 흰 글자)을 준다. 안의 배지·단추는 바탕에 맞춰 반투명 흰색으로 바꾼다.
 */
+/* 화면 머리말(2026-10-14). 파란 바탕을 걷고 준비 지침서와 같은 모양 — 가운데 제목과 회색 설명 — 으로 통일했다. */
 .product-hero {
-  border-radius: 22px;
-  padding: 24px 28px;
-  background: var(--product-accent-deep);
-  color: #fff;
+  padding: 4px 0 2px;
+  text-align: center;
+  color: var(--product-ink);
 }
 .product-hero h1,
-.product-hero h2 { color: #fff; }
-.product-hero p { color: rgba(255, 255, 255, 0.8); }
-.product-hero [data-slot='badge'],
-.product-hero [data-slot='button'],
-.product-hero a[class*='inline-flex'] {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-.product-hero [data-slot='button']:hover:not(:disabled),
-.product-hero a[class*='inline-flex']:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
-.product-hero [data-slot='button']:disabled { opacity: 0.6; }
+.product-hero h2 { color: var(--product-ink); }
+.product-hero p { color: var(--product-muted); font-size: 14.5px; line-height: 1.7; }
+/* 한글 설명이 낱말 중간(「보세/요」)에서 끊기지 않게. */
+.product-hero p,
+.app-title-band p { word-break: keep-all; text-wrap: balance; }
 /* 제목 띠가 없는 화면은 메뉴 바 바로 아래에서 머리 상자가 시작한다 — 띠가 있던 자리만큼 비어 보이지 않게 위 여백을 줄인다. */
 .app-shell:not(:has(.app-title-band)) .app-shell-content > main > .app-shell-container { padding-top: 14px; }
 .app-shell:not(:has(.app-title-band)) .app-shell-route-qualification > main { padding-top: 0; }
