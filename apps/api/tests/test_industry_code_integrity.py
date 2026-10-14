@@ -13,7 +13,6 @@ from apps.api.app.scripts.seed_golden_v02_accounts import (
     golden_profile_industry_code,
     synthetic_industry_code,
 )
-from bidengine.judgment.rules import _GENERAL_CONSTRUCTION_CODES
 
 
 pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
@@ -32,11 +31,6 @@ def test_golden_j22_j24_use_official_codes_only_in_shared_demo():
 def test_supplied_explicit_golden_code_is_not_silently_rewritten():
     data = {"name": "국내외여행업", "code": "GOLDEN-J22-01"}
     assert golden_profile_industry_code("J22", 1, data, shared_db=True) == "GOLDEN-J22-01"
-
-
-def test_wrong_fixture_mapping_does_not_leak_into_general_construction():
-    assert "0004" not in _GENERAL_CONSTRUCTION_CODES
-    assert {"0001", "0002", "0003", "0005"} == _GENERAL_CONSTRUCTION_CODES
 
 
 def test_public_picker_hides_synthetic_and_test_only_codes():

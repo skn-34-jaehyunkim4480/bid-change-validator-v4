@@ -30,7 +30,8 @@ when the requirement is a four-digit official code.
 - Hide active Golden or pytest-only master rows from the normal
   industry picker and new company industry writes, preserving
   historical per-code lookups and FK relations.
-- Correct test fixtures and general-contractor list.
+- Correct test fixtures. The general-contractor rule belongs to the
+  separate engine-zone PR; it is NOT included in this API PR.
 - Make shared Golden seeds map J22 -> 1262 and J24 -> 4966 after
   verifying the official master; preserve standalone Golden fixtures.
   Never guess a mapping for the ambiguous J09-J12, J19, J23 or J26.
