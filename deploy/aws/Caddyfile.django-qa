@@ -1,0 +1,20 @@
+{$SITE_DOMAIN} {
+    encode gzip
+
+    # Opt-in route: unchanged FastAPI traffic is handled by the next block.
+    handle /api/v1/django-qa/* {
+        reverse_proxy django-qa:8001
+    }
+
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web:3000
+    }
+}
