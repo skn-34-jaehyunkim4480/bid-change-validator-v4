@@ -183,13 +183,15 @@ body {
   white-space: nowrap;
 }
 
+/* 제목 띠도 파란 바탕 없이 가운데 제목과 회색 설명으로(2026-10-14). */
 .app-title-band {
-  height: 120px;
-  background: linear-gradient(120.17deg, #dfe9ff 0%, #e9e2fb 33.82%, #dcefff 73.53%);
+  height: auto;
+  padding: 34px 0 6px;
+  background: none;
 }
 
 .app-title-band-tall {
-  height: 142px;
+  height: auto;
 }
 
 .app-shell-content {
@@ -223,7 +225,7 @@ body {
   }
 
   .app-header {
-    height: 72px;
+    height: auto;
   }
 
   .app-utility-bar {
@@ -231,16 +233,16 @@ body {
   }
 
   .app-gnb {
-    height: 72px;
+    height: auto;
   }
 
   .app-primary-nav {
-    display: none;
+    display: flex;
   }
 
   .app-title-band,
   .app-title-band-tall {
-    height: 118px;
+    height: auto;
   }
 
   .app-header-actions span {
@@ -252,3 +254,100 @@ body {
     flex-basis: auto;
   }
 }
+
+.app-mobile-auth { display: none; }
+@media (max-width: 767px) {
+  .app-mobile-auth { display: flex; align-items: center; margin-left: auto; font-size: 13px; }
+}
+
+/*
+  상단 메뉴 바: 화면 폭을 다 쓰는 띠 대신, 가운데에 떠 있는 둥근 바(2026-10-12).
+  스크롤해도 따라온다. 위쪽 출처 줄(나라장터·조달청)은 스크롤하면 올라가고 바만 남는다.
+*/
+.app-shell .app-header {
+  position: sticky;
+  top: -36px;
+  z-index: 40;
+  height: auto;
+  border-bottom: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.app-shell .app-header > * { pointer-events: auto; }
+.app-shell .app-gnb {
+  height: auto;
+  padding-block: 10px;
+  background: transparent;
+}
+.app-shell .app-gnb > .app-shell-container {
+  width: min(1180px, calc(100% - 32px));
+  max-width: none;
+  height: 60px;
+  padding-inline: 22px 10px;
+  gap: 18px;
+  border: 1px solid var(--product-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--product-surface) 94%, transparent);
+  box-shadow: 0 8px 28px rgba(31, 42, 82, 0.12);
+  backdrop-filter: blur(10px);
+}
+.app-shell .app-brand { width: auto; min-width: 0; height: auto; }
+.app-shell .app-brand-copy { height: auto; }
+.app-shell .app-brand-subtitle { display: none; }
+.app-shell .app-primary-nav { gap: 4px; justify-content: center; }
+.app-shell .app-nav-link {
+  padding: 8px 13px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+.app-shell .app-nav-link:hover { background: var(--product-tint); }
+.app-shell .app-nav-link[aria-current='page'] { background: var(--product-accent-soft); color: var(--product-accent-deep); }
+.app-shell .app-nav-link[aria-current='page']::after { content: none; }
+.app-nav-search {
+  display: flex;
+  flex: 0 1 220px;
+  min-width: 150px;
+  height: 40px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 14px;
+  border: 1px solid var(--product-line);
+  border-radius: 999px;
+  background: var(--product-tint);
+}
+.app-nav-search:focus-within { border-color: var(--product-accent); background: var(--product-surface); }
+.app-nav-search input { min-width: 0; flex: 1 1 auto; border: 0; background: transparent; font-size: 13.5px; color: var(--product-ink); outline: none; }
+.app-nav-search input::placeholder { color: var(--product-faint); }
+.app-nav-search button { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--product-accent); color: #fff; }
+
+@media (max-width: 1100px) {
+  .app-nav-search { display: none; }
+}
+@media (max-width: 767px) {
+  .app-shell .app-header { position: static; }
+  .app-shell .app-gnb > .app-shell-container { height: auto; padding: 8px 16px 0; border-radius: 22px; gap: 0; }
+  .app-shell .app-primary-nav { justify-content: flex-start; gap: 2px; padding-bottom: 6px; }
+  .app-shell .app-nav-link { min-height: 40px; padding: 8px 11px; font-size: 14px; }
+}
+
+/*
+  화면 머리 상자(2026-10-12): 제목 띠를 없앤 화면(내 입찰 건·회사 프로필)의 첫 덩어리를 둥근 상자로 묶고,
+  예전 제목 띠의 배색(진한 파랑 바탕에 흰 글자)을 준다. 안의 배지·단추는 바탕에 맞춰 반투명 흰색으로 바꾼다.
+*/
+/* 화면 머리말(2026-10-14). 파란 바탕을 걷고 준비 지침서와 같은 모양 — 가운데 제목과 회색 설명 — 으로 통일했다. */
+.product-hero {
+  padding: 4px 0 2px;
+  text-align: center;
+  color: var(--product-ink);
+}
+.product-hero h1,
+.product-hero h2 { color: var(--product-ink); }
+.product-hero p { color: var(--product-muted); font-size: 14.5px; line-height: 1.7; }
+/* 한글 설명이 낱말 중간(「보세/요」)에서 끊기지 않게. */
+.product-hero p,
+.app-title-band p { word-break: keep-all; text-wrap: balance; }
+/* 제목 띠가 없는 화면은 메뉴 바 바로 아래에서 머리 상자가 시작한다 — 띠가 있던 자리만큼 비어 보이지 않게 위 여백을 줄인다. */
+.app-shell:not(:has(.app-title-band)) .app-shell-content > main > .app-shell-container { padding-top: 14px; }
+.app-shell:not(:has(.app-title-band)) .app-shell-route-qualification > main { padding-top: 0; }

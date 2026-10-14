@@ -33,6 +33,10 @@ class AppUser(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
+    # 요금제(membership.py). 유료 요금제는 membership_expires_at 이 지나면 무료로 본다.
+    membership_plan: Mapped[str] = mapped_column(Text, default="FREE", server_default="FREE")
+    membership_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    membership_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     sessions: Mapped[list["AuthSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True

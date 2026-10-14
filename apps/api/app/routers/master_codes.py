@@ -40,6 +40,12 @@ def search_master_codes(
     filters = []
     if active_only:
         filters.append(model.active.is_(True))
+        if code_type is MasterCodeType.INDUSTRIES:
+            # Hide synthetic Golden and test-only master rows in the public
+            # picker without making historical Golden FK references unreadable.
+            # Legacy history remains available through the direct code endpoint.
+            filters.append(model.code.op("~")(r"^[0-9]{4}$"))
+            filters.append(or_(model.source_window.is_(None), model.source_window != "pytest"))
 
     normalized_query = q.strip() if q is not None else None
     if normalized_query == "":

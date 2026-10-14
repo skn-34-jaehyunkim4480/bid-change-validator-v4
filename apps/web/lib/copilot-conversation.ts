@@ -1,36 +1,50 @@
 import { apiFetch, ApiError } from './api';
+import { copilotChatPath } from './django-qa-routing';
+import { buildCopilotTransport, type CopilotTransportRequest } from './copilot-transport';
 import { validateEnvelope } from './copilot-v31';
-import type { CopilotChatRequest, CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot-api';
+import type { CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot-api';
 
-export type Turn = { id: number; question: string; response?: CopilotChatResponse };
+export type Turn = { id: number; question: string; response?: CopilotChatResponse; free?: boolean };
 export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext; conversationId?: string; serverRevision?: number; targetId?: string };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
-type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean; document_processing?: boolean };
+type ConversationRequest = CopilotTransportRequest & { general_page?: string };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
 export type GuidedSelection = { jobId: string; questionId: string };
 type FailedRead = { request: ConversationRequest; turnId: number };
 
+/** 공고에 매이지 않은 일반 도우미 대화의 자리. 대화 저장소에서는 검토 건 id 자리에 이 값을 쓴다. */
+export const GENERAL_CONVERSATION_ID = 'general';
+
 async function sendConversationMessage(request: ConversationRequest): Promise<CopilotChatResponse> {
-  const { semantic_processing, document_processing, ...payload } = request;
-  const body: CopilotChatRequest = document_processing ? {
-    ...payload,
-    public_document_question: payload.public_document_question ?? payload.message,
-    allow_external_processing: true,
-  } : payload;
-  const response = await apiFetch('/api/v1/copilot/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}),
-    },
-    body: JSON.stringify({ ...body, response_version: '3.1' }),
-  });
-  if (!response.ok) {
-    const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
-    throw new ApiError(responseBody?.error?.message ?? `요청에 실패했습니다. (${response.status})`,
-      response.status, responseBody?.error?.code ?? 'HTTP_ERROR');
+  const general = request.case_id === GENERAL_CONVERSATION_ID;
+  const { body, headers } = general
+    // 일반 도우미에는 질문·대화·화면 이름만 보낸다. 공고도 회사 정보도 싣지 않는다.
+    ? { body: { message: request.message, history: request.history ?? [], page: request.general_page },
+        headers: { 'Content-Type': 'application/json', ...(request.semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}) } }
+    : buildCopilotTransport(request);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 70000);
+  try {
+    const response = await apiFetch(copilotChatPath({ general, documentProcessing: request.document_processing === true, semanticProcessing: request.semantic_processing === true, responseVersion: request.document_processing && !request.semantic_processing ? 'legacy' : '3.1', intent: request.intent, hasAction: Boolean(request.user_input || request.job_id || request.question_id) }, process.env.NEXT_PUBLIC_DJANGO_QA_ENABLED === 'true'), {
+      method: 'POST',
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+      throw new ApiError(responseBody?.error?.message ?? `요청에 실패했습니다. (${response.status})`,
+        response.status, responseBody?.error?.code ?? 'HTTP_ERROR');
+    }
+    return response.json() as Promise<CopilotChatResponse>;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ApiError('AI 응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.', 0, 'COPILOT_TIMEOUT');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return response.json() as Promise<CopilotChatResponse>;
 }
 
 function canonical(value: unknown): string {
@@ -108,8 +122,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
       reasons: [
         { text: '예: “우리 회사가 참가할 수 있는지 알려줘”, “무엇을 확인해야 해?”, “첫 번째 조건 근거 보여줘”', requirement_key: null, evidence_refs: [] },
         { text: '비교 가능한 이전 버전이 있는 공고라면 변경된 자격요건도 확인할 수 있어요.', requirement_key: null, evidence_refs: [] },
-        { text: 'AI 상세 설명을 켜면 질문 이해와 자연스러운 설명을 위해 현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용해요.', requirement_key: null, evidence_refs: [] },
-        { text: '공고문 근거 답변을 켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용하고, 실제 인용 근거가 있는 경우에만 생성형 설명을 보여줘요.', requirement_key: null, evidence_refs: [] },
+        { text: '안내를 확인하면 답변을 위해 질문과 대화, 현재 판정 결과·요건 상태, 판정에 필요한 회사 프로필 정보, 현재 공고문을 외부 AI 처리에 사용해요.', requirement_key: null, evidence_refs: [] },
         { text: '답변 반영이나 재검증은 대화만으로 실행하지 않고, 제안을 확인한 뒤 명시적인 실행 버튼을 눌러야 합니다.', requirement_key: null, evidence_refs: [] },
       ],
       limitations: [], next_action: null,
@@ -152,6 +165,39 @@ export class ConversationStore {
   }
   private update(caseId: string, patch: Partial<Conversation>) {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
+    this.listeners.forEach(fn => fn());
+  }
+  /** 모든 대화를 비운다. 계정이 바뀔 때 앞 계정의 대화가 화면에 남지 않게 한다. */
+  reset() {
+    this.states.clear();
+    this.failed.clear();
+    this.listeners.forEach(fn => fn());
+  }
+  /** 대화가 있는 검토 건의 id. 대화 목록(전용 화면의 왼쪽)이 쓴다. */
+  caseIds(): string[] {
+    return [...this.states.entries()].filter(([, state]) => state.turns.length > 0).map(([caseId]) => caseId);
+  }
+  /**
+   * 이 브라우저에 남길 모양. 답이 온 턴만 남기고, 서버가 메모리에 들고 있던 대화 식별자는 뺀다 —
+   * 새로고침이나 서버 재시작 뒤에는 그 식별자가 가리키는 대화가 없을 수 있다.
+   */
+  serialize(): Record<string, Pick<Conversation, 'turns' | 'revision'>> {
+    const out: Record<string, Pick<Conversation, 'turns' | 'revision'>> = {};
+    for (const [caseId, state] of this.states) {
+      const turns = state.turns.filter(turn => turn.response);
+      if (turns.length) out[caseId] = { turns: structuredClone(turns), revision: state.revision };
+    }
+    return out;
+  }
+  /** serialize 로 남긴 것을 되살린다. 이미 대화가 있는 검토 건은 건드리지 않는다. */
+  hydrate(saved: unknown) {
+    if (!saved || typeof saved !== 'object') return;
+    for (const [caseId, value] of Object.entries(saved as Record<string, unknown>)) {
+      const turns = (value as { turns?: unknown } | null)?.turns;
+      if (!Array.isArray(turns) || !turns.length || this.states.get(caseId)?.turns.length) continue;
+      const revision = Number((value as { revision?: unknown }).revision) || turns.length;
+      this.states.set(caseId, { ...empty(), turns: structuredClone(turns) as Turn[], revision });
+    }
     this.listeners.forEach(fn => fn());
   }
   snapshot(caseId: string): Conversation | null {
@@ -203,11 +249,14 @@ export class ConversationStore {
     semanticProcessing = false,
     documentProcessing = false,
     guided?: GuidedSelection,
+    freeChat = false,
   ) {
     const old = this.get(caseId);
     if (!caseId || old.busy || !question.trim()) return;
     const revision = old.revision + 1;
-    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question }] });
+    // 입력창에 직접 쓴 질문만 자유 대화다. 버튼(안내형 질문, 요건 근거 보기)은 기존 경로를 탄다.
+    const free = freeChat && !intent && !guided;
+    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question, free }] });
 
     if (!intent && isCopilotHelpQuestion(question)) {
       const response = localHelpResponse(revision, old.reply);
@@ -218,7 +267,11 @@ export class ConversationStore {
     }
 
     const request: ConversationRequest = {
-        case_id: caseId, message: question, intent: intent ?? inferE1Intent(question),
+        case_id: caseId, message: question, intent: free ? undefined : intent ?? inferE1Intent(question),
+        free_chat: free || undefined,
+        // 앞선 자유 대화 네 턴. 서버는 문맥으로만 쓰고, 사실은 매번 저장된 판정에서 다시 읽는다.
+        history: free ? old.turns.filter(turn => turn.free && turn.response?.answer).slice(-4)
+          .map(turn => ({ question: turn.question, answer: turn.response!.answer })) : undefined,
         job_id: guided?.jobId, question_id: guided?.questionId,
         conversation_id: old.conversationId, context_revision: old.serverRevision, target_id: old.targetId,
         requirement_key: hasOrdinalReference(question) ? undefined : old.focus,
@@ -229,6 +282,19 @@ export class ConversationStore {
           last_response_intent: old.turns.at(-1)?.response?.intent },
       };
     await this.perform(caseId, request, revision);
+  }
+  /** 일반 도우미에게 묻는다. screen 은 담당자가 열어 둔 화면의 이름이다(내용은 보내지 않는다). */
+  async askGeneral(question: string, screen: string | undefined, semanticProcessing: boolean) {
+    const caseId = GENERAL_CONVERSATION_ID;
+    const old = this.get(caseId);
+    if (old.busy || !question.trim()) return;
+    const revision = old.revision + 1;
+    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question, free: true }] });
+    await this.perform(caseId, {
+      case_id: caseId, message: question, free_chat: true, general_page: screen,
+      history: old.turns.filter(turn => turn.response?.answer).slice(-4).map(turn => ({ question: turn.question, answer: turn.response!.answer })),
+      semantic_processing: semanticProcessing || undefined,
+    }, revision);
   }
   private async perform(caseId: string, request: ConversationRequest, revision: number) {
     try {

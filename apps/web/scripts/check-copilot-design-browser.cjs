@@ -162,7 +162,9 @@ function load(file) {
     await page.goto(`${origin}/evidence?caseId=${id}&evidence=E1&analysisRunId=historical-analysis`);
     await page.getByRole('heading',{name:'이 근거는 이전 분석 기준입니다'}).waitFor();
     assert.equal(await page.locator('.app-shell-content blockquote').count(),0);
-    await page.goto(`${origin}/evaluation?caseId=${id}`);assert.equal(await page.getByRole('button',{name:'AI Copilot',exact:true}).count(),0);
+    // 공고별 대화가 없는 화면에서도 도우미는 뜬다 — 일반 도우미로.
+    await page.goto(`${origin}/evaluation?caseId=${id}`);await page.getByRole('button',{name:'AI Copilot',exact:true}).click();
+    await page.locator('#copilot-panel[open] .copilot-mode').waitFor();assert.equal(await page.locator('#copilot-panel .copilot-jobs').count(),0,'General helper has no case questions');
     authMode='error';await page.goto(`${origin}/notices`);
     await page.getByRole('heading',{name:'로그인 상태를 확인하지 못했습니다.',exact:true}).waitFor();
     assert.equal(new URL(page.url()).pathname,'/notices','5xx must not masquerade as logout');

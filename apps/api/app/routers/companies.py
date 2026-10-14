@@ -1,4 +1,5 @@
 from datetime import date
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..auth import authorize_company_access, get_optional_current_user
 from ..auth_models import AppUser
+from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
 from ..models import (
@@ -32,9 +34,13 @@ from ..schemas import (
     PerformanceCreate,
     PerformanceRead,
     PerformanceUpdate,
+    ProcurementCompanyRead,
+    ProcurementIndustryRead,
+    ProcurementProductRead,
     StaffRead,
     StaffRoleRead,
 )
+from ..services.procurement_company import G2BApiError, fetch_procurement_company, normalize_business_number
 
 
 router = APIRouter(prefix="/api/v1/companies", tags=["companies"])
@@ -86,11 +92,18 @@ def _load_certification(
 
 
 def _validate_industry_codes(db: Session, codes: list[str]) -> dict[str, IndustryCode]:
+    # The company picker must never accept Golden/pytest-only test identifiers
+    # as a legally registered G2B industry. Existing historical profile reads
+    # are intentionally unaffected.
+    if any(re.fullmatch(r"[0-9]{4}", code) is None for code in codes):
+        raise ApiError(422, "INVALID_INDUSTRY_CODE", "Official four-digit G2B industry codes are required.")
     industries = {
         industry.code: industry
         for industry in db.scalars(
             select(IndustryCode).where(
-                IndustryCode.code.in_(codes), IndustryCode.active.is_(True)
+                IndustryCode.code.in_(codes),
+                IndustryCode.active.is_(True),
+                (IndustryCode.source_window.is_(None) | (IndustryCode.source_window != "pytest")),
             )
         )
     }
@@ -218,7 +231,10 @@ def create_company(
     db: Session = Depends(get_db),
     user: AppUser | None = Depends(get_optional_current_user),
 ) -> CompanyRead:
-    if user is not None and user.role != "SYSTEM_ADMIN":
+    # 회사가 아직 없는 계정은 자기 회사 프로필을 한 번 만들 수 있다. 만들면 그 회사의 관리자가 된다(2026-10-13).
+    # 이미 회사가 있는 계정은 회사를 더 만들 수 없다.
+    founding = user is not None and user.role != "SYSTEM_ADMIN" and user.company_id is None
+    if user is not None and user.role != "SYSTEM_ADMIN" and not founding:
         raise ApiError(403, "COMPANY_CREATION_FORBIDDEN", "회사 생성 권한이 없습니다.")
     industries = _validate_industry_codes(db, payload.industry_codes)
     company = Company(
@@ -252,8 +268,61 @@ def create_company(
         )
         for role in payload.staff.roles
     ]
+    if founding:
+        user.company_id = company.id
+        user.role = "ADMIN"
     _commit(db, "이미 등록된 사업자등록번호입니다.")
     return _company_response(_load_company(db, company.id))
+
+
+@router.get("/procurement-lookup", response_model=ProcurementCompanyRead)
+def lookup_procurement_company(
+    business_registration_number: str,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> ProcurementCompanyRead:
+    """사업자등록번호로 조달청 등록 정보를 찾아 준다. 찾기만 하고 프로필은 바꾸지 않는다(반영은 PATCH 로 한다).
+
+    회사에 사업자등록번호가 이미 저장돼 있으면 그 번호만 조회할 수 있다 — 다른 회사의 등록 정보로
+    자기 프로필을 채우지 못하게 한다. 시스템 관리자와 번호가 아직 없는 회사는 어떤 번호든 조회한다.
+    """
+    try:
+        bizno = normalize_business_number(business_registration_number)
+    except ValueError as error:
+        raise ApiError(422, "INVALID_BUSINESS_NUMBER", str(error)) from error
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        company = db.get(Company, user.company_id) if user.company_id is not None else None
+        saved = company.business_registration_number if company is not None else None
+        if saved and saved != bizno:
+            raise ApiError(403, "BUSINESS_NUMBER_MISMATCH", "회사에 등록된 사업자등록번호로만 조회할 수 있습니다.")
+    service_key = get_settings().decoded_g2b_service_key
+    if not service_key:
+        raise ApiError(503, "G2B_NOT_CONFIGURED", "조달청 조회 설정이 없어 불러올 수 없습니다.")
+    try:
+        found = fetch_procurement_company(bizno, service_key=service_key)
+    except G2BApiError as error:
+        raise ApiError(502, "PROCUREMENT_LOOKUP_FAILED", "조달청 조회에 실패했습니다. 잠시 뒤 다시 시도해 주세요.") from error
+    if found is None:
+        return ProcurementCompanyRead(found=False, business_registration_number=bizno)
+    known = set(db.scalars(
+        select(IndustryCode.code).where(
+            IndustryCode.code.in_([code for code, _, _ in found.industries]), IndustryCode.active.is_(True),
+        )
+    )) if found.industries else set()
+    return ProcurementCompanyRead(
+        found=True,
+        business_registration_number=bizno,
+        name=found.name or None,
+        region_code=found.province_code,
+        region_name=found.region_name,
+        address=found.address,
+        opened_on=found.opened_on,
+        industries=[
+            ProcurementIndustryRead(code=code, name=name, representative=representative, registrable=code in known)
+            for code, name, representative in found.industries
+        ],
+        products=[ProcurementProductRead(code=code, name=name) for code, name in found.products],
+    )
 
 
 @router.get("", response_model=list[CompanyRead])
@@ -310,8 +379,16 @@ def update_company(
     if "industry_codes" in supplied:
         if payload.industry_codes is None:
             raise ApiError(422, "INVALID_REQUEST", "industry_codes cannot be null")
-        industries = _validate_industry_codes(db, payload.industry_codes)
         existing = {item.industry_code: item for item in company.industries}
+        # A historical Golden profile can still carry a synthetic code from
+        # the shared v0.2 fixtures. Retain unchanged links for existing profile
+        # edits, but validate EVERY newly added code against the official picker.
+        # This prevents unrelated profile edits from failing after hiding test
+        # masters and never allows a user to newly register GOLDEN-/pytest IDs.
+        newly_added_codes = [
+            code for code in payload.industry_codes if code not in existing
+        ]
+        industries = _validate_industry_codes(db, newly_added_codes)
         company.industries = [
             existing.get(code)
             or CompanyIndustry(industry_code=code, industry=industries[code])
@@ -345,6 +422,28 @@ def update_company(
             ]
 
     _commit(db, "이미 등록된 사업자등록번호입니다.")
+    return _company_response(_load_company(db, company_id))
+
+
+@router.post("/{company_id}/reset", response_model=CompanyRead)
+def reset_company_profile(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> CompanyRead:
+    """프로필을 초기 상태로 되돌린다(2026-10-13): 수행 실적, 인증·등록, 인력(상시 근로자 수·역할), 사업자등록번호를 비운다.
+
+    회사명·업종·소재지·기업 구분은 남긴다. 이 넷은 회사를 만들 때 반드시 정하는 값이고, 비운 채 두면 판정기가
+    "값이 없다"가 아니라 "그 자격이 없다"로 읽을 수 있다(미충족). 회사 레코드와 계정·검토 건은 그대로다.
+    """
+    authorize_company_access(user, company_id, write=True)
+    company = _load_company(db, company_id)
+    company.performances = []
+    company.certifications = []
+    company.staff_roles = []
+    company.staff = None
+    company.business_registration_number = None
+    _commit(db, "프로필을 초기화하지 못했습니다.")
     return _company_response(_load_company(db, company_id))
 
 

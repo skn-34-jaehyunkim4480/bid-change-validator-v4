@@ -137,6 +137,38 @@ class G2BClient:
             params["inqryEndDt"] = _format_query_datetime(window_ended_at)
         return self._fetch_json_page(endpoint=endpoint, params=params)
 
+    def fetch_participation_limits(
+        self, *, bid_notice_no: str, bid_notice_order: str,
+    ) -> dict[str, list[dict]]:
+        """Fetch the structured licence limits and permitted regions of one notice version.
+
+        Both lookups require the notice order (bidNtceOrd); without it the API answers
+        "필수값 입력 에러". An agency that entered no limit yields an empty list.
+        """
+        return {
+            "licenses": self._fetch_all_by_notice("getBidPblancListInfoLicenseLimit", bid_notice_no, bid_notice_order),
+            "regions": self._fetch_all_by_notice("getBidPblancListInfoPrtcptPsblRgn", bid_notice_no, bid_notice_order),
+        }
+
+    def fetch_endpoint_page(self, endpoint: str, params: dict[str, str | int]) -> G2BPage:
+        """공고 목록이 아닌 다른 조달청 조회를 한 쪽 부른다(예: 사용자정보 서비스). pageNo·numOfRows 는 params 에 준다."""
+        return self._fetch_json_page(
+            endpoint=endpoint, params={"serviceKey": self._service_key, "type": "json", **params},
+        )
+
+    def _fetch_all_by_notice(self, endpoint: str, bid_notice_no: str, bid_notice_order: str) -> list[dict]:
+        items: list[dict] = []
+        page_number = 1
+        while True:
+            page = self._fetch_json_page(endpoint=endpoint, params={
+                "serviceKey": self._service_key, "pageNo": page_number, "numOfRows": 100, "type": "json",
+                "inqryDiv": "2", "bidNtceNo": bid_notice_no, "bidNtceOrd": bid_notice_order,
+            })
+            items.extend(page.items)
+            if not page.items or page_number * page.page_size >= page.total_count:
+                return items
+            page_number += 1
+
     def _fetch_json_page(
         self,
         *,
@@ -165,6 +197,9 @@ class G2BClient:
             ) from error
 
         root = payload.get("response", {}) if isinstance(payload, dict) else {}
+        if not root and isinstance(payload, dict):
+            # 오류 응답은 "response" 대신 "nkoneps.com.response.ResponseError" 같은 이름 아래에 header 만 온다.
+            root = next((value for value in payload.values() if isinstance(value, dict) and "header" in value), {})
         header = root.get("header", {}) or {}
         result_code = str(header.get("resultCode", ""))
         if result_code != "00":

@@ -1,11 +1,12 @@
 import { apiFetch, ApiError } from './api';
+import { invalidateSharedData } from './shared-query-cache';
 import type { CopilotEnvelope } from './copilot-v31';
 import type { EvidenceLocation, QualificationQuestion } from './qualification-api';
 
 // Pydantic app/copilot/{chat,contracts,actions}.py is the source of truth.
 export type CopilotIntent = 'QUALIFICATION_SUMMARY' | 'REQUIREMENT_EVIDENCE' | 'REQUIRED_CHECKS'
   | 'PROFILE_SNAPSHOT' | 'DOCUMENT_QA' | 'ACTION_REQUEST' | 'CHANGED_NOTICE' | 'UNKNOWN';
-export type OverallStatus = 'eligible' | 'ineligible' | 'insufficient_data';
+export type OverallStatus = 'core_met' | 'core_unmet' | 'needs_review';
 export type JudgmentStatus = 'SATISFIED' | 'UNSATISFIED' | 'UNKNOWN';
 export type RequirementType = 'PERFORMANCE_AMOUNT' | 'PERFORMANCE_COUNT' | 'INDUSTRY' | 'REGION'
   | 'STAFF' | 'REGISTRATION_CERTIFICATION' | 'EXPERIENCE_FIELD' | 'COMPANY_SIZE';
@@ -90,6 +91,10 @@ export type CopilotChatRequest = {
   /** Only this separate public question is eligible for external embedding, with explicit opt-in. */
   public_document_question?: string | null;
   allow_external_processing?: boolean;
+  /** 입력창에 직접 쓴 질문. 서버가 저장된 판정을 근거로 자유롭게 답한다(app/copilot/free_chat.py). */
+  free_chat?: boolean;
+  /** 자유 대화의 앞선 턴. 문맥으로만 쓰인다. */
+  history?: { question: string; answer: string }[];
 };
 
 export type GuidedQuestion = {
@@ -107,6 +112,14 @@ export type CopilotChatResponse = {
   product_state: QualificationSummary | RequirementEvidenceResult | RequiredChecksResult | JudgmentProfileResult | ChangedNoticeResult | null;
   citations: CopilotSource[]; sources: CopilotSource[]; actions: ActionProposal[]; warnings: string[];
   external_processing_used: boolean; external_processing_scope: 'PUBLIC_NOTICE_DOCUMENT' | null;
+  /** 일반 도우미가 찾아 준 공고들. 공고마다 판정 화면으로 가는 단추를 단다. */
+  notice_links?: NoticeLink[];
+};
+
+/** action 이 JUDGE 면 판정 화면을 열면서 검토를 바로 시작한다(AI 추천 공고를 판정해 달라고 했을 때). */
+export type NoticeLink = {
+  notice_id: string; bid_notice_no: string; title: string; institution: string | null;
+  bid_closed_at: string | null; expired: boolean; action: 'OPEN' | 'JUDGE'; note: string | null;
 };
 export type JudgmentRun = {
   id: string; preflight_case_id: string; analysis_run_id: string; company_id: string; notice_version_id: string;
@@ -152,8 +165,11 @@ export async function getCopilotJobs(caseId: string, signal?: AbortSignal) {
 }
 
 /** Invoke only after explicit confirmation. Pass the server proposal unchanged; never auto-retry. */
-export function confirmCopilotAction(payload: ConfirmAction, signal?: AbortSignal) {
-  return post<ConfirmActionResult>('/api/v1/copilot/actions/confirm', payload, signal);
+export async function confirmCopilotAction(payload: ConfirmAction, signal?: AbortSignal) {
+  const result = await post<ConfirmActionResult>('/api/v1/copilot/actions/confirm', payload, signal);
+  // POST uses apiFetch directly; refresh case/notice/judgment caches after a confirmed write.
+  invalidateSharedData();
+  return result;
 }
 
 export type ReadReceipt = { kind: 'product'; provenance: ProductProvenance } | { kind: 'revalidation'; provenance: RevalidationProvenance };

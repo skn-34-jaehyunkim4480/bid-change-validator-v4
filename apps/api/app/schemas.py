@@ -140,6 +140,33 @@ class CompanyCreate(ApiModel):
         return _unique_stripped(values)
 
 
+class ProcurementIndustryRead(ApiModel):
+    code: str
+    name: str
+    representative: bool
+    # 업종 코드 마스터에 있어 프로필에 넣을 수 있는가.
+    registrable: bool
+
+
+class ProcurementProductRead(ApiModel):
+    code: str
+    name: str
+
+
+class ProcurementCompanyRead(ApiModel):
+    """조달청 나라장터에 등록된 업체 정보. found 가 False 면 그 사업자번호로 등록된 업체가 없다."""
+    found: bool
+    business_registration_number: str
+    name: str | None = None
+    # 시·도 코드(두 자리). 화면의 소재지 목록에 있는 코드와 같다.
+    region_code: str | None = None
+    region_name: str | None = None
+    address: str | None = None
+    opened_on: str | None = None
+    industries: list[ProcurementIndustryRead] = []
+    products: list[ProcurementProductRead] = []
+
+
 class CompanyUpdate(ApiModel):
     name: str | None = None
     business_registration_number: str | None = None
@@ -481,6 +508,9 @@ class PreflightCaseRead(ApiModel):
     baseline_version_number: int | None
     current_version_id: UUID
     current_version_number: int
+    # 현재 차수의 입찰서 제출 마감. 지났으면 expired 가 True 다(내 입찰 건에서 '만료됨' 으로 표시하고 지울 수 있다).
+    bid_closed_at: datetime | None = None
+    expired: bool = False
     documents: list[ProposalDocumentRead]
     created_at: datetime
     updated_at: datetime
@@ -530,6 +560,8 @@ class BidNoticeSummary(ApiModel):
     first_seen_at: datetime
     last_seen_at: datetime
     current_version: int
+    qualification_status: str | None = None
+    current_case_id: UUID | None = None
 
 
 class NoticeRelationRead(ApiModel):
@@ -603,6 +635,7 @@ class BidNoticeSearchResponse(ApiModel):
     limit: int
     offset: int
     items: list[BidNoticeSummary]
+    status_counts: dict[str, int] | None = None
 
 
 class NoticeSyncRequest(ApiModel):

@@ -11,13 +11,14 @@ from sqlalchemy.orm import Session
 from bidengine.contracts import Evidence
 from bidengine.rag.answer import GroundedCitation
 from bidengine.rag.retrieval import retrieve
+from .notice_links import NoticeLink
 from ..document_rag.service import load_or_build_version_index
 from bidengine.rag.store import create_openai_embeddings
 from ..models import PreflightCase
 from ..qualification.judgment import QualificationJudgmentError
 from .actions import ChangedNoticeResult, get_changed_notice, propose_answer
 from .contracts import (
-    ActionInput, ActionProposal, JudgmentProfileResult, QualificationSummary,
+    ActionInput, ActionProposal, FreeChatTurn, JudgmentProfileResult, QualificationSummary,
     RequiredChecksResult, RequirementEvidenceResult, RevalidationProposal,
 )
 from .product_tools import (
@@ -50,6 +51,19 @@ class CopilotChatRequest(BaseModel):
     target_id: str | None = Field(default=None, max_length=100)
     job_id: str | None = Field(default=None, min_length=1, max_length=80)
     question_id: str | None = Field(default=None, min_length=1, max_length=80)
+    # 사용자가 입력창에 직접 쓴 질문. 저장된 판정을 평문 한 장으로 만들어 모델에 한 번 묻는다(free_chat.py).
+    # 버튼(안내형 질문, 요건 근거 보기)과 실행 요청은 이 경로를 타지 않는다.
+    free_chat: StrictBool = False
+    history: list[FreeChatTurn] = Field(default_factory=list, max_length=8)
+
+
+class GeneralChatRequest(BaseModel):
+    """공고에 매이지 않은 일반 도우미에게 묻는다(free_chat.answer_general_question)."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[FreeChatTurn] = Field(default_factory=list, max_length=8)
+    # 담당자가 열어 둔 화면의 이름("공고 찾기", "회사 프로필"). 화면의 내용은 받지 않는다.
+    page: str | None = Field(default=None, max_length=60)
 
 
 class ProductSource(BaseModel):
@@ -78,6 +92,8 @@ class CopilotChatResponse(BaseModel):
     reply_context: ReplyContext | None = None
     presentation: Presentation | None = None
     envelope: 'AnswerEnvelope | None' = None
+    # 일반 도우미가 찾아 준 공고들. 화면이 공고마다 판정 화면으로 가는 단추를 단다(copilot/notice_links.py).
+    notice_links: list[NoticeLink] = Field(default_factory=list)
 
 
 REVALIDATION_VERB = r"(?:재검증|다시(?:검토|검증|판정|봐|보))"

@@ -41,11 +41,24 @@ class Settings(BaseSettings):
     notice_poll_business_types: str = "SERVICE,GOODS,CONSTRUCTION,FOREIGN"
     notice_history_backfill_batch_size: int = Field(default=10, ge=1, le=100)
     notice_history_backfill_retry_minutes: int = Field(default=15, ge=1, le=1_440)
+    processing_batch_size: int = Field(default=10, ge=1, le=100)
+    processing_poll_interval_seconds: int = Field(default=30, ge=1, le=3600)
+    processing_enable_external: bool = False
+    # 분석할 때 나라장터 면허제한·참가가능지역을 조회해 문서 옆의 두 번째 근거로 쓴다(services/participation_limits.py).
+    participation_limits_lookup_enabled: bool = True
+    qualification_self_service_enabled: bool = False
+    qualification_self_service_daily_limit: int = Field(default=3, ge=1, le=100)
+    # 요금제 한도(membership.py). 켠 환경에서만 계정별 월 한도를 적용한다 — 시연 환경에서 켠다.
+    membership_limits_enabled: bool = False
+    # 시연용 멤버십 코드. 비워 두면 화면에서 가입할 수 없다(결제는 붙어 있지 않다).
+    membership_demo_code: str | None = None
     auth_bootstrap_admin_username: str = "admin"
     auth_bootstrap_admin_password: str = "admin"
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
     auth_cookie_secure: bool = False
     auth_required: bool = False
+    # 누구나 아이디·비밀번호로 계정을 만들 수 있게 한다(2026-10-14). 끄면 관리자가 만든 계정만 쓴다.
+    auth_signup_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

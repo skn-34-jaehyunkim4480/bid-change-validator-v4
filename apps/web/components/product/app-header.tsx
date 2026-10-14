@@ -1,7 +1,11 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Search } from 'lucide-react';
 import { NavigationLink } from '@/components/navigation-link';
 import { PageContainer } from '@/components/product/page-container';
+import { listPreflightCases } from '@/lib/api';
 import type { AuthUser } from '@/lib/auth';
 
 /*
@@ -13,7 +17,9 @@ const PRIMARY_NAV = [
   { label: '공고 찾기', href: '/notices' },
   { label: '내 입찰 건', href: '/qualification' },
   { label: '회사 프로필', href: '/company' },
-  { label: '이용안내', href: '/guide' },
+  { label: 'AI 추천', href: '/recommendations' },
+  { label: 'AI Copilot', href: '/copilot' },
+  { label: '준비 지침서', href: '/prep-guide' },
 ] as const;
 
 function isActive(pathname: string, href: string) {
@@ -30,6 +36,27 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
+/** 메뉴 바 안의 공고 검색. 공고 찾기 화면으로 가서 그 낱말로 찾는다. */
+function HeaderSearch() {
+  const router = useRouter();
+  const [value, setValue] = useState('');
+  return (
+    <form
+      className="app-nav-search"
+      aria-label="공고 검색"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const query = value.trim();
+        router.push(query ? `/notices?q=${encodeURIComponent(query)}` : '/notices');
+      }}
+    >
+      <label className="sr-only" htmlFor="app-nav-search-input">공고 검색</label>
+      <input id="app-nav-search-input" type="search" value={value} onChange={(event) => setValue(event.target.value)} placeholder="공고번호 · 공고명" autoComplete="off" />
+      <button type="submit" aria-label="공고 검색"><Search size={16} /></button>
+    </form>
+  );
+}
+
 export function AppHeader({
   pathname,
   user,
@@ -41,6 +68,7 @@ export function AppHeader({
 }) {
   return (
     <header className="app-header">
+      <a href="#main-content" className="app-skip-link">본문으로 건너뛰기</a>
       <div className="app-utility-bar">
         <PageContainer className="flex h-full items-center justify-between text-[13px] leading-[19px]">
           {/* 우리가 쓰는 공고 데이터의 출처. 링크처럼 보이므로 실제 출처로 연결한다. */}
@@ -80,18 +108,32 @@ export function AppHeader({
             </span>
           </NavigationLink>
 
+          <div className="app-mobile-auth">
+            {user ? (
+              <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
+            ) : (
+              <NavigationLink href="/login" className="app-utility-action">로그인</NavigationLink>
+            )}
+          </div>
           <nav className="app-primary-nav" aria-label="주요 메뉴">
             {PRIMARY_NAV.map((item) => (
-              <a
+              <NavigationLink
                 key={item.href}
                 href={item.href}
                 className="app-nav-link"
+                onMouseEnter={item.href === '/qualification' && user ? () => { void listPreflightCases().catch(() => {}); } : undefined}
+                onFocus={item.href === '/qualification' && user ? () => { void listPreflightCases().catch(() => {}); } : undefined}
                 aria-current={isActive(pathname, item.href) ? 'page' : undefined}
               >
                 {item.label}
-              </a>
+              </NavigationLink>
             ))}
+            {/* 운영 관리는 시스템 관리자에게만 보인다. 회사 관리자(ADMIN)는 일반 계정이 자기 회사를 만들면 되는 역할이라 메뉴에 두지 않는다(2026-10-13). */}
+            {user?.role === 'SYSTEM_ADMIN' && (
+              <NavigationLink href="/admin" className="app-nav-link" aria-current={pathname.startsWith('/admin') ? 'page' : undefined}>운영 관리</NavigationLink>
+            )}
           </nav>
+          <HeaderSearch />
         </PageContainer>
       </div>
     </header>

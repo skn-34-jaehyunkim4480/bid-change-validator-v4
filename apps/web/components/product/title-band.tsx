@@ -10,16 +10,9 @@ export type TitleBandProps = {
 export function TitleBand({ title, description, breadcrumb, variant = 'default' }: TitleBandProps) {
   return (
     <section className={`app-title-band ${variant === 'tall' ? 'app-title-band-tall' : ''}`}>
-      <PageContainer className="flex h-full items-end justify-between gap-8 pb-[34px]">
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-[9px]">
-          <h1 className="text-[29px] font-extrabold leading-[44px] tracking-[-0.04em] text-[var(--product-ink)]">
-            {title}
-          </h1>
-          <p className="text-[14px] leading-[21px] text-[var(--product-muted)]">{description}</p>
-        </div>
-        <p className="hidden shrink-0 pb-[2px] text-[12.5px] leading-[19px] text-[var(--product-muted)] md:block">
-          {breadcrumb}
-        </p>
+      <PageContainer className="flex flex-col items-center gap-2 text-center" aria-label={breadcrumb}>
+        <h1 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">{title}</h1>
+        <p className="max-w-[70ch] text-[14.5px] leading-[1.7] text-[var(--product-muted)]">{description}</p>
       </PageContainer>
     </section>
   );

@@ -1,25 +1,33 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
+import { CASE_SORT_OPTIONS, filterCases, sortCases, type CaseSort } from '@/lib/case-list';
+import { forgetCase, rememberCase, rememberList, returnCaseId } from '@/lib/last-case';
+import { AUTOSTART_PARAM } from '@/lib/open-judgment';
+import { membershipUsage, openMembershipIfRequired, useMembership } from '@/lib/membership';
+import { diffCanonicalRequirements, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
+import { DocumentSourceViewer } from '@/components/product/document-source-viewer';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, CHANGE_TYPE_LABEL, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, GAP_CATEGORY_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
-import { navigateTo, replaceWith } from '@/lib/navigation';
+import type { HighlightSource } from '@/lib/source-highlight';
 import {
+  ApiError,
+  deleteExpiredPreflightCase,
   getNotice,
   getNoticeVersions,
   listNotices,
@@ -35,15 +43,20 @@ import {
   listCompanies,
   listQualificationQuestions,
   runQualificationAnalysis,
+  requestQualificationAnalysis,
   runQualificationJudgment,
   type CanonicalRequirement,
   type CompanyProfile,
   type QualificationAnalysisRun,
+  type CoverageGap,
   type QualificationAnalysisSummary,
   type QualificationJudgment,
   type QualificationJudgmentRun,
   type QualificationQuestion,
+  type RequirementTier,
 } from '@/lib/qualification-api';
+
+class AnalysisApprovalPending extends Error {}
 
 type Busy = 'load' | 'create' | 'review' | null;
 type ReviewStep = 'idle' | 'analysis' | 'judgment' | 'done';
@@ -57,6 +70,8 @@ type RequirementView = {
   /* 조치(확인하기)는 묶음 안 어느 구성원에 걸려 있을지 모른다. 전부 들고 본다. */
   memberKeys: string[];
   evidenceLabel: string;
+  /* 핵심 자격(종합 판정에 씀)인가, 사용자가 확인할 항목인가. 택일 묶음은 핵심 자격이 하나라도 섞이면 핵심 자격이다. */
+  tier: RequirementTier;
 };
 
 
@@ -109,19 +124,30 @@ function resolveRequirementStatuses(
   return resolved;
 }
 
-/* 결론 카드의 충족·확인 필요·미달 건수. 택일 그룹은 구성원 수만큼이 아니라 한 건으로 센다. */
-function countByStatus(requirements: CanonicalRequirement[], statuses: Map<string, QualificationRowStatus>) {
-  const counted = new Set<string>();
-  const counts: Record<QualificationRowStatus, number> = { SATISFIED: 0, UNSATISFIED: 0, UNKNOWN: 0, UNJUDGED: 0 };
-  for (const requirement of requirements) {
-    const groupKey = anyOfGroupKey(requirement);
-    if (groupKey) {
-      if (counted.has(groupKey)) continue;
-      counted.add(groupKey);
-    }
-    counts[statuses.get(requirement.requirement_key) ?? 'UNJUDGED'] += 1;
-  }
-  return counts;
+/** 근거 칸의 글자. evidence_key 는 내부 식별자라 보여 주지 않고, 누르면 무엇이 열리는지를 쓴다. */
+function evidenceLabelOf(requirement: QualificationAnalysisRun['requirements'][number]) {
+  if (requirement.evidence_keys[0]) return '근거 보기';
+  // 문서가 아니라 나라장터에 발주처가 입력한 면허제한·참가가능지역에서 온 요건이다. 인용할 원문이 없을 뿐 근거가 없는 것이 아니다.
+  if (requirement.scope?.origin === 'NOTICE_API') return '나라장터 입력값';
+  return '근거 없음';
+}
+
+/** 띄어쓰기·줄바꿈만 다른 같은 조항을 같은 것으로 본다. */
+function compactRaw(text: string | null | undefined) {
+  return (text ?? '').replace(/\s+/g, '');
+}
+
+/** 요건이 실제로 가리키는 근거 수. 분석은 읽어 본 조항마다 위치를 남기므로 evidence 전체를 세면 요건과 무관한 수백 건이 된다. */
+function citedEvidenceCount(analysis: QualificationAnalysisRun) {
+  return new Set(analysis.requirements.flatMap((item) => item.evidence_keys)).size;
+}
+
+function changeDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+}
+
+function changeMoney(value: number | null | undefined) {
+  return value == null ? '-' : `${value.toLocaleString()} 원`;
 }
 
 function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefined) {
@@ -134,7 +160,15 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
   if (judgment?.basis_type === 'USER_ANSWER') return '사용자 답변으로 판정 · 회사 프로필에는 반영하지 않음';
   if (!company) return '회사 프로필 없음';
   switch (requirement.type) {
-    case 'INDUSTRY': return company.industries.length ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ') : '비어 있음';
+    case 'INDUSTRY': {
+      // 회사의 업종을 전부 늘어놓지 않는다 — 이 요건이 묻는 업종만 보여 준다(같이 요구한 코드, 대신 인정되는 상위 면허 포함).
+      if (!company.industries.length) return '비어 있음';
+      const scopeCodes = (key: string) => (Array.isArray(requirement.scope[key]) ? requirement.scope[key] as unknown[] : []).map((code) => `${code as string}`);
+      const wanted = [`${requirement.value ?? ''}`, ...scopeCodes('with_codes'), ...scopeCodes('accepted_by')].filter(Boolean);
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '');
+      const held = company.industries.filter((item) => wanted.some((code) => code === item.code || (!/^\d{4}$/.test(code) && loose(item.name).includes(loose(code)))));
+      return held.length ? held.map((item) => `${item.code} · ${item.name}`).join(', ') : `해당 업종 없음 · 보유 업종 ${company.industries.length}개`;
+    }
     case 'REGION': return company.region_name ?? company.region_code ?? '비어 있음';
     case 'COMPANY_SIZE': return company.company_size;
     case 'STAFF': return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
@@ -144,7 +178,17 @@ function companyValue(requirement: CanonicalRequirement, company: CompanyProfile
       const max = Math.max(0, ...company.performances.map((item) => item.amount));
       return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : '비어 있음';
     }
-    case 'REGISTRATION_CERTIFICATION': return company.certifications.length ? company.certifications.map((item) => item.name).join(', ') : '비어 있음';
+    case 'REGISTRATION_CERTIFICATION': {
+      // 같은 이유로, 이 요건과 이름(또는 번호)이 맞는 등록·인증만 보여 준다.
+      if (!company.certifications.length) return '비어 있음';
+      const loose = (text: string) => text.replace(/[\s·ㆍ()]/g, '').toLowerCase();
+      const wanted = loose(`${requirement.value ?? ''}`);
+      const held = company.certifications.filter((item) => {
+        const name = loose(item.name), code = loose(item.certificate_number ?? '');
+        return Boolean(wanted) && (name.includes(wanted) || wanted.includes(name) || (code !== '' && code === wanted));
+      });
+      return held.length ? held.map((item) => item.name).join(', ') : `일치하는 등록·인증 없음 · 보유 ${company.certifications.length}건`;
+    }
     case 'EXPERIENCE_FIELD': {
       const fields = [...new Set(company.performances.flatMap((item) => item.fields))];
       return fields.length ? fields.join(', ') : '비어 있음';
@@ -158,11 +202,158 @@ function canReuseAnalysis(summary: QualificationAnalysisSummary | null) {
 }
 
 export default function QualificationPage() {
-  const requestedCaseId = useSearchParams().get('caseId');
-  return <QualificationWorkspace key={requestedCaseId} requestedCaseId={requestedCaseId} />;
+  const params = useSearchParams();
+  const requestedCaseId = params.get('caseId');
+  // 「검토 건 목록」으로 들어오면 보던 공고로 되돌리지 않고 목록을 보여 준다.
+  const listRequested = params.get('view') === 'list';
+  // AI Copilot·AI 추천의 「판정하기」로 들어오면 화면이 열리면서 검토를 바로 시작한다.
+  const autostart = params.get(AUTOSTART_PARAM) === '1';
+  return <QualificationWorkspace key={`${requestedCaseId}:${listRequested}`} requestedCaseId={requestedCaseId} listRequested={listRequested} autostart={autostart} />;
 }
 
-function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string | null }) {
+const CASES_PER_PAGE = 9;
+
+/** 요금제 한도가 있는 계정에게 이번 달에 참가자격을 확인한 공고 수와 상한을 보여 준다. 한도가 없으면 그리지 않는다. */
+function NoticeCheckQuota({ className = '' }: { className?: string }) {
+  const membership = useMembership();
+  const limit = membership?.limited ? membership.limits.notice_checks : null;
+  if (!membership || limit == null) return null;
+  return (
+    <span className={`inline-flex items-center rounded-full border border-[var(--product-line)] bg-white px-3 py-1 text-[12px] font-semibold tabular-nums text-[var(--product-muted)] ${className}`}
+      title="같은 공고를 다시 검토하는 것은 세지 않습니다">
+      이번 달 참가자격 확인 {membership.used.notice_checks ?? 0}/{limit}건 · {membership.plan_name}
+    </span>
+  );
+}
+
+/** 마감이 지난 공고의 검토 건을 지운다. 한 번 더 눌러야 지워진다. */
+function DeleteExpiredCase({ caseId, onDeleted, className = '' }: { caseId: string; onDeleted: () => void; className?: string }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  async function remove() {
+    setBusy(true);
+    setFailure('');
+    try {
+      await deleteExpiredPreflightCase(caseId);
+      onDeleted();
+    } catch (cause) {
+      setFailure(cause instanceof Error ? cause.message : '삭제하지 못했습니다.');
+      setBusy(false);
+    }
+  }
+  if (!asking) return (
+    <button type="button" className={`inline-flex items-center gap-1 rounded-full border border-[#b9bec9] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#4a5060] hover:border-rose-300 hover:text-rose-700 ${className}`} onClick={() => setAsking(true)}>
+      <Trash2 className="size-3.5" />삭제
+    </button>
+  );
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-[12px] ${className}`}>
+      <span className="font-semibold text-rose-700">{failure || '검토 기록이 함께 지워집니다.'}</span>
+      <button type="button" className="rounded-full bg-rose-600 px-2.5 py-1 font-semibold text-white disabled:opacity-60" onClick={() => void remove()} disabled={busy}>{busy ? '삭제 중…' : '삭제'}</button>
+      <button type="button" className="rounded-full border border-[#b9bec9] bg-white px-2.5 py-1 font-semibold text-[#4a5060]" onClick={() => { setAsking(false); setFailure(''); }} disabled={busy}>취소</button>
+    </span>
+  );
+}
+
+const EXPIRED_BADGE = 'rounded-full bg-[#5b6170] px-2 py-0.5 text-[12px] font-bold text-white';
+
+/** 검토 중인 공고를 3×3 카드로 보여 주고, 아홉 건을 넘으면 다음 쪽으로 넘긴다. */
+function CaseGrid({ cases, onChanged }: { cases: PreflightCase[]; onChanged: () => void }) {
+  const [page, setPage] = useState(0);
+  // 목록 안 검색과 정렬(2026-10-14). 글자를 치는 대로 걸러지고, Enter 를 누르면 첫 쪽으로 간다.
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<CaseSort>('recent');
+  const listed = useMemo(() => sortCases(filterCases(cases, query), sort), [cases, query, sort]);
+  const pageCount = Math.max(1, Math.ceil(listed.length / CASES_PER_PAGE));
+  const current = Math.min(page, pageCount - 1);
+  const shown = listed.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
+  return (
+    <main className="bg-white text-[var(--product-body)]">
+      <div className="app-shell-container py-10">
+        {/* 머리 상자: 흰 바탕에 얇은 파란 테두리(2026-10-12). 회사 프로필의 파란 상자와 달리 채우지 않는다. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-[var(--product-accent-deep)] bg-white px-7 py-6">
+          <div>
+            <h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">검토 중인 공고 {cases.length}건</h2>
+            <p className="mt-2 text-[14px] text-[var(--product-muted)]">열어 볼 공고를 고르세요. 아래에서 찾거나 순서를 바꿀 수 있습니다.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <NoticeCheckQuota />
+            <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 찾기</NavigationLink>
+          </div>
+        </div>
+        <form className="mt-5 flex flex-wrap items-center gap-2" aria-label="검토 중인 공고 안에서 찾기"
+          onSubmit={(event) => { event.preventDefault(); setPage(0); }}>
+          <label className="sr-only" htmlFor="case-search">검토 중인 공고 안에서 찾기</label>
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)] sm:max-w-[420px]">
+            <Search className="size-4 shrink-0 text-[var(--product-muted)]" aria-hidden="true" />
+            <input id="case-search" type="search" value={query} placeholder="공고번호 · 공고명으로 찾기"
+              className="h-full min-w-0 flex-1 bg-transparent text-[14px] outline-none"
+              onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
+          </div>
+          <label className="sr-only" htmlFor="case-sort">정렬</label>
+          <select id="case-sort" value={sort} className="h-10 rounded-full border border-[var(--product-line)] bg-white px-4 text-[14px]"
+            onChange={(event) => { setSort(event.target.value as CaseSort); setPage(0); }}>
+            {CASE_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          {query.trim() && <span className="text-[13px] tabular-nums text-[var(--product-muted)]" aria-live="polite">{listed.length}건 찾음</span>}
+        </form>
+        {listed.length === 0 && (
+          <p className="mt-6 rounded-[18px] border border-dashed border-[var(--product-line)] px-6 py-10 text-center text-[14px] text-[var(--product-muted)]">
+            「{query.trim()}」에 맞는 검토 건이 없습니다. 낱말을 줄이거나 공고번호로 찾아 보세요.
+          </p>
+        )}
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="검토 중인 공고">
+          {shown.map((item) => {
+            const changed = item.baseline_version_number != null && item.baseline_version_number !== item.current_version_number;
+            // 마감이 지난 공고는 진한 회색 바탕에 '만료됨' 을 붙이고, 카드 아래에서 지울 수 있다(2026-10-13).
+            const expired = item.expired === true;
+            return (
+              <li key={item.id} className="relative">
+                <NavigationLink
+                  href={`/qualification?caseId=${encodeURIComponent(item.id)}`}
+                  className={`flex h-full min-h-[148px] flex-col gap-2 rounded-[18px] border p-5 transition-colors ${expired
+                    ? 'border-[#c3c7d0] bg-[#dfe2e8] pb-14 hover:border-[#9aa0ad]'
+                    : 'border-[var(--product-line)] bg-white hover:border-[var(--product-accent)] hover:bg-[var(--product-tint)]'}`}
+                >
+                  <span className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--product-muted)]">
+                    <span className="font-semibold tabular-nums">{item.bid_notice_no}</span>
+                    {expired && <span className={EXPIRED_BADGE}>만료됨</span>}
+                    {changed
+                      ? <span className="rounded-full bg-[#1c348f] px-2 py-0.5 text-[12px] font-bold text-white">변경공고 v{item.baseline_version_number} → v{item.current_version_number}</span>
+                      : <span className="rounded-full border border-[var(--product-line)] px-2 py-0.5 text-[12px] font-semibold">v{item.current_version_number}</span>}
+                  </span>
+                  <strong className="line-clamp-2 text-[17px] leading-6 text-[var(--product-ink)]">{item.notice_title || item.title}</strong>
+                  {/* 왼쪽에 최근 변경일, 오른쪽 하단에 입찰 마감일(2026-10-13). 마감을 모르는 공고는 오른쪽을 비운다. */}
+                  <span className="mt-auto flex items-baseline justify-between gap-3 text-[13px] text-[var(--product-muted)]">
+                    <span>최근 변경 {new Date(item.updated_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}</span>
+                    {item.bid_closed_at && (
+                      <span className={`shrink-0 tabular-nums ${expired ? '' : 'font-semibold text-[var(--product-ink)]'}`}>
+                        마감 {new Date(item.bid_closed_at).toLocaleDateString('ko-KR', { dateStyle: 'medium' })}
+                      </span>
+                    )}
+                  </span>
+                </NavigationLink>
+                {/* 삭제 단추는 카드 링크 밖에 둔다(링크 안의 단추는 눌러도 공고가 열린다). */}
+                {expired && <div className="absolute bottom-4 left-5 right-5 flex"><DeleteExpiredCase caseId={item.id} onDeleted={() => { forgetCase(item.id); onChanged(); }} /></div>}
+              </li>
+            );
+          })}
+        </ul>
+        {pageCount > 1 && (
+          <nav className="mt-6 flex items-center justify-center gap-3" aria-label="검토 건 쪽 이동">
+            <Button variant="outline" onClick={() => setPage(current - 1)} disabled={current === 0}>이전</Button>
+            <span className="text-[14px] tabular-nums text-[var(--product-muted)]" aria-live="polite">{current + 1} / {pageCount}</span>
+            <Button variant="outline" onClick={() => setPage(current + 1)} disabled={current >= pageCount - 1}>다음</Button>
+          </nav>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function QualificationWorkspace({ requestedCaseId, listRequested, autostart }: { requestedCaseId: string | null; listRequested: boolean; autostart: boolean }) {
+  const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
   const [cases, setCases] = useState<PreflightCase[]>([]);
@@ -201,6 +392,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     return () => window.cancelAnimationFrame(frame);
   }, [selectedEvidenceKey]);
   const [busy, setBusy] = useState<Busy>('load');
+  const [detailsPending, setDetailsPending] = useState(Boolean(requestedCaseId));
   const [reviewStep, setReviewStep] = useState<ReviewStep>('idle');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -270,7 +462,18 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
   const initialize = useCallback(async () => {
     async function hydrateCase(caseId: string, request: number) {
-      const workspace = await loadCaseWorkspace(caseId);
+      const workspace = await loadCaseWorkspace(caseId, ({ caseItem, notice, versions: headerVersions }) => {
+        if (request !== generation.current) return;
+        setCaseNoticeState({ noticeId: caseItem.notice_id, notice });
+        setActiveCase(caseItem);
+        rememberCase(caseItem.id);   // 다른 탭에 다녀와도 이 공고로 돌아온다
+        setCases((previous) => previous.some((item) => item.id === caseItem.id) ? previous : [caseItem, ...previous]);
+        setNoticeId(caseItem.notice_id);
+        setCompanyId(caseItem.company_id ?? '');
+        setVersions(headerVersions);
+        setDetailsPending(true);
+        setBusy(null);
+      });
       if (request !== generation.current) return;
       // Case ID가 있는 진입에서는 검토 상세만으로 첫 화면을 그릴 수 있다.
       // 전체 공고/Case 목록을 기다리지 않고 현재 항목을 먼저 넣어 로딩 화면을 끝낸다.
@@ -293,6 +496,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setQuestions(workspace.questions);
       setReviewStep(workspace.displayJudgment ? 'done' : 'idle');
       setSelectedEvidenceKey(null);
+      setDetailsPending(false);
     }
 
     generation.current += 1;
@@ -305,38 +509,48 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setMessage('');
     setMessageTone('ok');
     setBusy('load');
+    setDetailsPending(Boolean(requestedCaseId));
     setError('');
     try {
       const targetCase = requestedCaseId;
       if (targetCase) {
-        // 공고 100건과 Case 드롭다운 자료는 보조 데이터다. 검토 상세와 동시에 요청하되
-        // 첫 화면 렌더링을 막지 않고 도착하는 대로 갱신한다.
-        const supportingData = Promise.allSettled([listNotices(), listPreflightCases()]);
+        // Case dropdown is secondary; neither the 100-notice list nor this dropdown blocks the case header.
+        void listPreflightCases().then((result) => {
+          if (request === generation.current) setCases(result.items);
+        }).catch(() => { /* Current case stays usable if the dropdown request fails. */ });
         await hydrateCase(targetCase, request);
-        void supportingData.then(([noticeResult, caseResult]) => {
-          if (request !== generation.current) return;
-          if (noticeResult.status === 'fulfilled') setNotices(noticeResult.value.items);
-          if (caseResult.status === 'fulfilled') setCases(caseResult.value.items);
-        });
         return;
       }
-      const [noticeResult, companyResult, caseResult] = await Promise.all([listNotices(), listCompanies(), listPreflightCases()]);
+      // On navigation, identify the latest case before requesting notices or company creation options.
+      const caseResult = await listPreflightCases();
+      if (request !== generation.current) return;
+      setCases(caseResult.items);
+      if (caseResult.items.length === 1) {
+        router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
+        return;
+      }
+      // 여럿이면: 방금까지 보던 공고가 있으면 그것을 다시 열고, 없거나 목록을 달라고 했으면 카드 목록에서 고른다(CaseGrid).
+      if (caseResult.items.length > 1) {
+        if (listRequested) rememberList();
+        const last = listRequested ? null : returnCaseId();
+        if (last && caseResult.items.some((item) => item.id === last)) {
+          router.replace(`/qualification?caseId=${encodeURIComponent(last)}`);
+        } else if (last) forgetCase(last);
+        return;
+      }
+      // Fetch the creation form's options only when the user has no case to open.
+      const [noticeResult, companyResult] = await Promise.all([listNotices(), listCompanies()]);
       if (request !== generation.current) return;
       setNotices(noticeResult.items);
       setCompanies(companyResult);
-      setCases(caseResult.items);
       setNoticeId(noticeResult.items[0]?.id ?? '');
       setCompanyId(companyResult[0]?.id ?? '');
-      if (caseResult.items[0]) {
-        // 로그인한 회사에 허용된 가장 최근 Case로 바로 진입한다.
-        replaceWith(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
-      }
     } catch (cause) {
       if (request === generation.current) setError(cause instanceof Error ? cause.message : '초기 데이터를 불러오지 못했습니다.');
     } finally {
       if (request === generation.current) setBusy(null);
     }
-  }, [requestedCaseId]);
+  }, [requestedCaseId, listRequested, router]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void initialize(), 0);
@@ -361,7 +575,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const created = await createPreflightCaseWithCompany({ notice_id: selectedNotice.id, company_id: companyId, baseline_version_number: baseline?.version_number, current_version_number: current.version_number, title: `${selectedNotice.bid_notice_no} 자격 검토` });
       const refreshed = await listPreflightCases();
       setCases(refreshed.items);
-      navigateTo(`/qualification?caseId=${created.id}`);
+      router.push(`/qualification?caseId=${created.id}`);
       setMessageTone('ok');
       setMessage('검토 건을 만들었습니다. 이제 참가자격 검토를 시작할 수 있습니다.');
     } catch (cause) {
@@ -373,7 +587,17 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
   async function getOrRunAnalysis(versionNumber: number, existing: QualificationAnalysisSummary | null, force: boolean) {
     if (!force && canReuseAnalysis(existing)) return existing!;
-    return runQualificationAnalysis(activeCase!.notice_id, versionNumber);
+    try {
+      return await runQualificationAnalysis(activeCase!.notice_id, versionNumber, force);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'ANALYSIS_APPROVAL_REQUIRED') {
+        const requested = await requestQualificationAnalysis(activeCase!.notice_id, versionNumber);
+        throw new AnalysisApprovalPending(requested.documents_ready
+          ? '분석 요청을 등록했습니다. 시스템 관리자 승인을 기다리고 있습니다. 승인 후 다시 검토해 주세요.'
+          : '분석 요청을 등록했습니다. 첨부파일 추출이 끝나면 시스템 관리자 승인이 필요합니다.');
+      }
+      throw cause;
+    }
   }
 
   async function runFullReview(force = false) {
@@ -436,13 +660,25 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const analyzedCount = 'requirements' in current && Array.isArray(current.requirements) ? current.requirements.length : current.requirement_count;
       const analysisIncomplete = current.status !== 'SUCCEEDED';
       setMessageTone(analysisIncomplete ? 'warn' : 'ok');
+      membershipUsage.refresh();   // 이번 달에 확인한 공고 수가 늘었을 수 있다
       setMessage(analysisIncomplete
         ? `자격조건 ${analyzedCount}건을 판정했습니다. 첨부 일부를 읽지 못해 빠진 조건이 있을 수 있습니다.`
         : `자격조건 ${analyzedCount}건을 분석하고 판정했습니다.`);
     } catch (cause) {
       if (request !== generation.current) return;
       setReviewStep('idle');
-      setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');
+      if (cause instanceof AnalysisApprovalPending) {
+        setMessageTone('warn');
+        setMessage(cause.message);
+        setError('');
+      } else if (openMembershipIfRequired(cause, 'NOTICE_CHECK')) {
+        // 요금제 한도를 넘었다 — 멤버십 창이 뜬다. 화면에는 같은 안내를 경고로 남긴다.
+        setMessageTone('warn');
+        setMessage(cause instanceof Error ? cause.message : '멤버십이 필요합니다.');
+        setError('');
+      } else {
+        setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');
+      }
     } finally {
       controller.releaseReview(activeCase.id);
       if (request === generation.current) setBusy(null);
@@ -477,6 +713,39 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     않았을 뿐이라 충족된 것이 아니다. 왜 빠졌는지(공고가 조건을 뺐는지, 분석이 놓쳤는지)를 가르는 건
     원문을 나란히 놓는 변경 이력의 일이라, 여기서는 사실만 알리고 그쪽으로 보낸다.
   */
+  /*
+    변경공고라면 무엇이 달라졌는지가 이 화면에서 가장 먼저 볼 내용이다(2026-10-12). 판정 요약보다 위에 둔다.
+    공고 값(마감·금액·계약방법)은 수집한 두 차수를 그대로 비교하고, 자격 요건은 저장된 두 분석을 비교한다.
+    요건의 추가·삭제는 공고가 바꾼 것일 수도, 분석이 다르게 읽은 것일 수도 있어 단정하지 않는다 — 원문을 나란히
+    보는 일은 변경 이력 화면에 맡긴다.
+  */
+  const changeDigest = useMemo(() => {
+    if (!baselineVersion || !currentVersion || baselineVersion.id === currentVersion.id) return null;
+    const fields = [
+      { label: '입찰서 제출마감', before: changeDate(baselineVersion.bid_closed_at), after: changeDate(currentVersion.bid_closed_at) },
+      { label: '추정가격', before: changeMoney(baselineVersion.estimated_price), after: changeMoney(currentVersion.estimated_price) },
+      { label: '배정예산', before: changeMoney(baselineVersion.allocated_budget), after: changeMoney(currentVersion.allocated_budget) },
+      { label: '계약방법', before: baselineVersion.contract_method ?? '-', after: currentVersion.contract_method ?? '-' },
+    ].filter((row) => row.before !== row.after);
+    const compared = Boolean(baselineAnalysisDetail && analysisDetail);
+    const requirements = compared
+      ? diffCanonicalRequirements(baselineAnalysisDetail!.requirements, analysisDetail!.requirements)
+        .filter((item) => item.change_type !== 'UNCHANGED')
+        .map((item) => ({
+          key: item.identity,
+          changeType: item.change_type,
+          typeLabel: REQUIREMENT_TYPE_LABEL[(item.current ?? item.baseline)?.type ?? ''] ?? (item.current ?? item.baseline)?.type ?? '요건',
+          before: compactRaw(item.baseline?.raw),
+          after: compactRaw(item.current?.raw),
+          // 구조화된 값이 같으면 글머리 기호나 법령 인용처럼 원문 표현만 달라진 것이다.
+          wordingOnly: Boolean(item.baseline && item.current && sameStructuredRequirement(item.baseline, item.current)),
+        }))
+        // 값이 실제로 달라진 것을 먼저 보여 준다.
+        .sort((a, b) => Number(a.wordingOnly) - Number(b.wordingOnly))
+      : [];
+    return { fields, requirements, compared };
+  }, [baselineVersion, currentVersion, baselineAnalysisDetail, analysisDetail]);
+
   const versionRequirementGap = useMemo(() => {
     if (!canViewBaseline || !baselineAnalysisDetail || !analysisDetail) return null;
     // requirement_key는 차수마다 새로 만들어져서 같은 요건이라도 값이 달라진다.
@@ -525,10 +794,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     택일(ANY_OF) 묶음은 화면에 한 줄로만 나와야 한다.
     구성원마다 한 줄씩 그리면 「1257 또는 6770 또는 6786」 한 조건이 똑같은 문장 세 줄로 반복된다.
     셋 다 충족으로 칠해도 마찬가지다 — 보유하지 않은 6770·6786이 충족으로 보이기 때문이다.
-    결론 카드(countByStatus)는 이미 묶음을 한 건으로 세고 있어서, 접지 않으면 위아래 건수도 어긋난다.
+    결론 카드는 이 줄(views)을 세므로, 접지 않으면 위아래 건수도 어긋난다.
   */
   const views: RequirementView[] = useMemo(() => {
     if (!shownAnalysis) return [];
+    // 2026-10-07 이전 분석에는 등급이 없다 — 예전처럼 모두 핵심 자격으로 본다.
+    const tierOf = (key: string): RequirementTier => shownAnalysis.requirement_tiers?.[key] ?? 'VERDICT';
     const judgmentOf = (key: string) => shownJudgment?.judgments.find((item) => item.requirement_key === key) ?? null;
     const seenGroups = new Set<string>();
     const rows: RequirementView[] = [];
@@ -545,7 +816,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           groupPeerNote: null,
           memberKeys: [requirement.requirement_key],
           // evidence_key(REQ-004-EVD)는 내부 식별자다. 누르면 원문이 열리므로 무엇을 하는 버튼인지 쓴다.
-          evidenceLabel: requirement.evidence_keys[0] ? '근거 보기' : '근거 없음',
+          evidenceLabel: evidenceLabelOf(requirement),
+          tier: tierOf(requirement.requirement_key),
         });
         continue;
       }
@@ -569,7 +841,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             : `택일 조건 ${members.length}개 · 충족된 것 없음`
           : null,
         memberKeys: members.map((item) => item.requirement_key),
-        evidenceLabel: representative.evidence_keys[0] ? '근거 보기' : '근거 없음',
+        evidenceLabel: evidenceLabelOf(representative),
+        tier: members.some((item) => tierOf(item.requirement_key) === 'VERDICT') ? 'VERDICT' : 'CHECKLIST',
       });
     }
 
@@ -577,13 +850,45 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   }, [shownAnalysis, shownJudgment, resolvedStatuses]);
 
   const selectedEvidence = selectedEvidenceKey ? shownAnalysis?.evidence.find((item) => item.evidence_key === selectedEvidenceKey) ?? null : null;
-  const statusCounts = useMemo(
-    () => countByStatus(shownAnalysis?.requirements ?? [], resolvedStatuses),
-    [shownAnalysis, resolvedStatuses],
-  );
-  const satisfied = statusCounts.SATISFIED;
-  const unknown = statusCounts.UNKNOWN;
-  const unsatisfied = statusCounts.UNSATISFIED;
+  /*
+    종합 판정은 핵심 자격(업종코드·소재지·규모·품명번호)만 본다(2026-10-07). 결론 카드의 충족·확인 필요·미달도
+    핵심 자격만 센다. 나머지(이름만 있는 인증, 실적 등)와 엔진이 값으로 담지 못한 조항은 「확인할 항목」으로 따로 센다.
+    views 는 이미 택일 묶음을 한 줄로 접었으므로 줄 수가 곧 조건 수다.
+  */
+  const verdictViews = views.filter((view) => view.tier === 'VERDICT');
+  const checklistViews = views.filter((view) => view.tier === 'CHECKLIST');
+  const coverage = shownAnalysis?.coverage ?? null;
+  const checklistGaps = useMemo(() => coverage?.checklist_gaps ?? [], [coverage]);
+  // 판정을 막는 공백 — 핵심 자격(업종·소재지·규모·품명번호)을 놓쳤을 수 있는 조항. 결론이 '확인 필요'인 이유라 핵심 자격 표 아래에 둔다.
+  const blockingGaps = useMemo(() => (coverage?.gaps ?? []).filter(
+    (gap) => gap.raw && !(coverage?.checklist_gaps ?? []).some((item) => item.raw === gap.raw && item.reason === gap.reason),
+  ), [coverage]);
+  const referenceNotes = useMemo(() => coverage?.notes ?? [], [coverage]);
+  const satisfied = verdictViews.filter((view) => view.status === 'SATISFIED').length;
+  const unknown = verdictViews.filter((view) => view.status === 'UNKNOWN').length;
+  const unsatisfied = verdictViews.filter((view) => view.status === 'UNSATISFIED').length;
+  const checklistCount = checklistViews.length + checklistGaps.length;
+
+  /* 원문 하이라이트: 화면의 표·목록과 같은 분류로 칠한다. 택일 묶음은 구성원 조항을 모두 칠한다. */
+  const sourceHighlights: HighlightSource[] = useMemo(() => {
+    if (!shownAnalysis) return [];
+    const tierOf = (key: string) => shownAnalysis.requirement_tiers?.[key] ?? 'VERDICT';
+    const fromRequirements = shownAnalysis.requirements.map((requirement) => ({
+      text: requirement.raw,
+      kind: tierOf(requirement.requirement_key) === 'VERDICT' ? 'VERDICT' as const : 'CHECKLIST' as const,
+      label: `${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${String(requirement.value ?? '')}`,
+    }));
+    const fromGaps = (gaps: CoverageGap[], kind: 'GAP_BLOCKING' | 'GAP_CHECKLIST') => gaps.map((gap) => ({
+      text: gap.raw, kind, label: gap.summary ?? '요건으로 정리하지 못한 조항',
+    }));
+    return [
+      ...fromRequirements,
+      ...fromGaps(blockingGaps, 'GAP_BLOCKING'),
+      ...fromGaps(checklistGaps, 'GAP_CHECKLIST'),
+      ...referenceNotes.map((note) => ({ text: note.raw, kind: 'NOTE' as const, label: '참고 정보' })),
+    ].filter((item) => item.text);
+  }, [shownAnalysis, blockingGaps, checklistGaps, referenceNotes]);
+  const sourceVersion = viewingBaseline ? baselineVersion : currentVersion;
   const [conclusionTitle, conclusionDescription] = overallCopy(shownJudgment?.overall_status);
   const canRevalidate = Boolean(
     activeCase?.baseline_version_number
@@ -616,11 +921,23 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   //  · dropped_requirements — 공고 원문 대조를 통과하지 못해 구조화에서 빠진 후보. raw·reason_code만 온다.
   // 아래 블록들은 보고 있는 차수(shownAnalysis)를 따라간다. 현재 차수 고정으로 두면
   // 기준 v1을 보는 중에도 v2의 진단·제외 요건·건수가 섞여 나온다. (#147 리뷰 필수 1)
-  const noticeFacts = shownAnalysis?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT') ?? [];
+  // 커버리지가 있는 분석은 엔진이 조항을 이미 갈라 두었다. 확인할 조항(gaps)은 위 상자들이 보여 주고, 요건이 아니라고
+  // 걸러 낸 조항(ignored — 제목·평가 항목·사업 설명)은 사용자가 확인할 것이 아니다. 둘을 여기서 다시 세면 공고 하나에
+  // 「판정에 들어가지 않은 조건 269건」 같은 숫자가 나온다(2026-10-10). 어느 쪽에도 들지 않은 것만 남긴다.
+  const settledRaws = new Set(
+    [...(coverage?.gaps ?? []), ...(coverage?.ignored ?? [])].map((gap) => compactRaw(gap.raw)),
+  );
+  const noticeFacts = (shownAnalysis?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT') ?? []).filter(
+    (item) => !coverage || !settledRaws.has(compactRaw(typeof item.details?.raw === 'string' ? item.details.raw : item.message)),
+  );
   const pipelineDiagnostics = shownAnalysis?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
-  const shownDiagnostics = pipelineDiagnostics
-    .map((item) => ({ code: item.code, text: diagnosticText(item.code) }))
-    .filter((item): item is { code: string; text: string } => Boolean(item.text));
+  // 같은 안내는 한 번만 보여 준다. 진단은 조항마다 하나씩 생겨서 그대로 그리면 같은 문장이 열 줄 넘게 반복된다.
+  const shownDiagnostics = [...new Map(
+    pipelineDiagnostics
+      .map((item) => ({ code: item.code, text: diagnosticText(item.code) }))
+      .filter((item): item is { code: string; text: string } => Boolean(item.text))
+      .map((item) => [item.text, item] as const),
+  ).values()];
   const droppedRequirements = shownAnalysis?.dropped_requirements ?? [];
 
   // 판정 밖 조건도 셋으로 갈린다 — 아직 안 돌렸다 / 못 읽었다 / 확인했더니 없다.
@@ -678,16 +995,100 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           : '분석이 완료되지 않아 자격요건을 표시할 수 없습니다. 위 안내를 확인해 주세요.'
         : '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.';
 
-  if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12">
+  const activeCaseId = activeCase?.id ?? '';
+  /* 요건으로 정리하지 못한 조항 한 줄. 모델이 쓴 확인용 문장과 종류를 앞에, 원문은 펼쳐 보게 둔다(설명이 없으면 원문만). */
+  const renderGap = (gap: CoverageGap, index: number) => (
+    <li key={`${index}-${gap.raw.slice(0, 24)}`} className="rounded-[12px] bg-white px-4 py-3 text-[14px] leading-6 text-[var(--product-body)]">
+      {gap.summary ? (
+        <>
+          <div className="flex flex-wrap items-start gap-2">
+            {gap.category && <span className="shrink-0 rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-2 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">{labelOf(GAP_CATEGORY_LABEL, gap.category)}</span>}
+            <p className="min-w-0 flex-1 font-medium">{gap.summary}</p>
+          </div>
+          <details className="mt-1.5">
+            <summary className="cursor-pointer text-[12.5px] text-[var(--product-muted)]">원문 보기</summary>
+            <p className="mt-1 text-[13px] leading-6 text-[var(--product-muted)]">{gap.raw}</p>
+          </details>
+        </>
+      ) : gap.raw}
+    </li>
+  );
+  const renderRequirementRow = ({ requirement, judgment, status, groupPeerNote, memberKeys, evidenceLabel }: RequirementView) => {
+      // 묶음을 접었으므로 조치도 묶음 전체로 본다. 대표 줄만 보면 다른 구성원에 걸린 질문을 놓친다.
+      const askable = memberKeys.some((key) => askableQuestionKeys.has(key));
+      const evidenceHref = `/evidence?caseId=${activeCaseId}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
+      /*
+        조치는 ① 그룹 판정 기준으로 걸고 ② 현재 차수에서만 건다.
+        ①이 없으면 이미 충족된 택일 그룹인데 개별 요건이 UNKNOWN이라고 다시 묻는다.
+        ②가 없으면 기준 v1 요건에서 「원문 확인」을 눌렀을 때 Evidence 화면이 현재 차수 분석만 써서
+        같은 evidence key를 가진 v2 근거가 열린다. 기준 차수에서는 같은 화면의 「근거 보기」만 쓴다. (#147 리뷰 필수 2)
+      */
+      const actionable = !viewingBaseline && status === 'UNKNOWN';
+      const companyValueText = groupPeerNote
+        ? `${companyValue(requirement, company, judgment)} · ${groupPeerNote}`
+        : companyValue(requirement, company, judgment);
+      return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCaseId}` : evidenceHref); } : undefined} />;
+  };
+
+  // 「판정하기」로 들어왔으면 검토 건이 다 뜬 뒤 한 번만 검토를 시작한다. 주소의 표시는 바로 지워, 새로고침해도 다시 돌지 않게 한다.
+  // 이미 판정이 있는 공고는 다시 돌리지 않고 결과를 보여 준다.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autostart || autoStarted.current || !activeCase || activeCase.id !== requestedCaseId || detailsPending || busy !== null) return;
+    autoStarted.current = true;
+    router.replace(`/qualification?caseId=${encodeURIComponent(activeCase.id)}`);
+    if (!displayJudgment) window.setTimeout(() => void runFullReview(false), 0);
+  });
+
+  if (busy === 'load' || (!requestedCaseId && cases.length === 1 && !activeCase) || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12" aria-label="???? ?? ?? ?? ?">
     {requestedCaseId && <ActionCard caseId={requestedCaseId} />}
-    <output>검토 데이터를 불러오고 있습니다.</output>
+    <output className="block space-y-5" aria-label="?? ???? ???? ????">
+      <div className="h-10 w-64 animate-pulse rounded-xl bg-slate-200" />
+      <div className="grid gap-5 lg:grid-cols-3">
+        {[0, 1, 2].map((index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />)}
+      </div>
+      <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
+    </output>
   </main>;
+  if (!requestedCaseId && cases.length > 1) return <CaseGrid cases={cases} onChanged={() => void initialize()} />;
   if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12">
     <ActionCard caseId={requestedCaseId} />
     <p role="alert">{error || '검토 건을 찾을 수 없습니다.'}</p>
     <Button variant="outline" className="mt-4" onClick={() => void initialize()}>화면 정보 다시 조회</Button>
     <NavigationLink href="/notices" className="ml-4 underline">공고 찾기</NavigationLink>
   </main>;
+
+  // Display verified notice metadata immediately; never render a provisional decision.
+  const caseHeader = activeCase ? (
+      <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2">{activeCase.expired && <span className={EXPIRED_BADGE}>만료됨</span>}<Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}{activeCase.bid_closed_at && <span className={`ml-2 tabular-nums ${activeCase.expired ? '' : 'font-semibold text-[var(--product-ink)]'}`}>· 입찰 마감 {changeDate(activeCase.bid_closed_at)}</span>}</p></div>
+        {/* 다른 검토 건으로는 카드 목록(CaseGrid)에서 옮겨 간다. 드롭다운은 건수가 늘면 제목이 잘려 고르기 어려웠다. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <NoticeCheckQuota />
+          {activeCase.expired && <DeleteExpiredCase caseId={activeCase.id} onDeleted={() => { forgetCase(activeCase.id); router.replace('/qualification?view=list'); }} />}
+          {cases.length > 1 && <NavigationLink href="/qualification?view=list" className={buttonVariants({ variant: 'outline' })}>검토 건 목록 {cases.length}건</NavigationLink>}
+          <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
+          <a href={g2bNoticeUrl(currentVersion?.detail_url, activeCase.bid_notice_no)} target="_blank" rel="noopener noreferrer"
+            className={buttonVariants({ variant: 'outline' })} aria-label="나라장터에서 공고 원문 보기 (새 창으로 열림)"><ExternalLink /> 나라장터 원문</a>
+          <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
+        </div>
+      </section>
+
+  ) : null;
+  if (activeCase && (detailsPending || error)) return (
+    <main className="bg-white text-[var(--product-body)]">
+      <div className="app-shell-container py-10">
+        {error && <div role="alert" className="mb-6 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-[15px] text-rose-700">{error}<Button variant="outline" className="ml-3" onClick={() => void initialize()}>다시 시도</Button></div>}
+        {caseHeader}
+        <CaseTabs caseId={activeCase.id} active="qualification" />
+        <output className="mt-6 block space-y-4" aria-label="검토 상세 불러오는 중">
+          <p className="text-[14px] text-[var(--product-muted)]">자격요건과 판정 결과를 불러오고 있습니다.</p>
+          <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="h-32 animate-pulse rounded-2xl bg-slate-100" />
+        </output>
+      </div>
+    </main>
+  );
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -704,17 +1105,54 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
         ) : (
           <>
             {/* ── 1 공고 · 검토 건 ── */}
-            <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
-              {/* 검토 건 이동은 화면 맨 아래 카드에 있어서 아무도 못 찾았다. 제목 옆으로 올린다. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => navigateTo(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
-                <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
-                <NavigationLink href="/notices" className={buttonVariants({ variant: 'outline' })}>공고 목록</NavigationLink>
-              </div>
-            </section>
-
+            {caseHeader}
             <CaseTabs caseId={activeCase.id} active="qualification" />
+
+            {/* ── 1-0 변경공고에서 달라진 것: 변경공고라면 가장 먼저 보여 준다 ── */}
+            {changeDigest && (
+              <section aria-labelledby="change-digest-title" className="mt-6 rounded-[20px] border border-[#1c348f] bg-[#f3f6ff] px-6 py-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 id="change-digest-title" className="text-[19px] font-extrabold tracking-[-0.02em] text-[#1c348f]">
+                    변경공고에서 달라진 것
+                    <span className="ml-2 text-[14px] font-semibold text-[var(--product-muted)]">기준 v{activeCase.baseline_version_number} → 현재 v{activeCase.current_version_number}</span>
+                  </h2>
+                  <NavigationLink href={`/changes?caseId=${activeCase.id}`} className="text-[14px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">변경 이력에서 원문 나란히 보기</NavigationLink>
+                </div>
+                {changeDigest.fields.length === 0 && changeDigest.requirements.length === 0 ? (
+                  <p className="mt-3 text-[15px] leading-6">
+                    {changeDigest.compared
+                      ? '주요 공고 값(마감·금액·계약방법)과 자격 요건에서 달라진 것을 찾지 못했습니다.'
+                      : '주요 공고 값(마감·금액·계약방법)은 달라지지 않았습니다. 자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.'}
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-[#d9e0f7]">
+                    {changeDigest.fields.map((row) => (
+                      <li key={row.label} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5 text-[15px]">
+                        <span className="rounded-full bg-[#1c348f] px-2.5 py-0.5 text-[12px] font-bold text-white">공고 값</span>
+                        <strong className="min-w-[110px]">{row.label}</strong>
+                        <span className="text-[var(--product-muted)] line-through">{row.before}</span>
+                        <span aria-hidden>→</span>
+                        <strong>{row.after}</strong>
+                      </li>
+                    ))}
+                    {changeDigest.requirements.slice(0, 6).map((row) => (
+                      <li key={row.key} className="py-2.5 text-[15px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[row.changeType]}</span>
+                          <strong>{row.typeLabel}</strong>
+                          {row.wordingOnly && <span className="text-[13px] text-[var(--product-muted)]">조건 값은 같고 원문 표현만 다름</span>}
+                        </div>
+                        {row.before && <p className={`mt-1 leading-6 ${row.after ? 'text-[var(--product-muted)] line-through' : 'text-[var(--product-muted)]'}`}>{row.after ? '' : '기준 차수: '}{row.before}</p>}
+                        {row.after && <p className="mt-0.5 leading-6">{row.before ? '→ ' : '현재 차수: '}{row.after}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {changeDigest.requirements.length > 6 && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건 변화 {changeDigest.requirements.length}건 중 6건만 보여 줍니다. 나머지는 변경 이력에서 확인해 주세요.</p>}
+                {changeDigest.requirements.length > 0 && <p className="mt-2 text-[13px] leading-5 text-[var(--product-muted)]">신설·삭제로 표시된 요건은 공고가 바꾼 것일 수도, 분석이 차수마다 다르게 읽은 것일 수도 있습니다. 원문으로 확인해 주세요.</p>}
+                {!changeDigest.compared && (changeDigest.fields.length > 0) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">자격 요건의 변화는 두 차수를 모두 검토한 뒤에 표시됩니다.</p>}
+              </section>
+            )}
 
             {/* ── 1-1 어느 차수 기준으로 보는가 ── */}
             {canViewBaseline && (
@@ -775,7 +1213,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             )}
 
             {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked || viewingBaseline}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{!viewingBaseline && analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} checklist={shownJudgment ? checklistCount : undefined} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked || viewingBaseline}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{!viewingBaseline && analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
 
             {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
@@ -793,26 +1231,57 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             {/* ── 5 왜 그 결론인지 — 요건별 판정과 근거 ── */}
             <section className="mt-10">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">{canViewBaseline ? `v${viewingBaseline ? activeCase.baseline_version_number : activeCase.current_version_number} 공고 원문에서 구조화한 자격요건과 그 근거입니다.` : '공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.'}</p></div><span className="text-[15px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {views.filter((view) => view.status !== 'UNJUDGED').length}건</span></div>
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">핵심 자격</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">{canViewBaseline ? `v${viewingBaseline ? activeCase.baseline_version_number : activeCase.current_version_number} 공고 원문에서 구조화한 자격요건과 그 근거입니다.` : '공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.'}</p></div><span className="text-[15px] text-[var(--product-muted)]">핵심 자격 {verdictViews.length}건 · 확인할 항목 {checklistCount}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
                 <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[13px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
-                {views.length ? views.map(({ requirement, judgment, status, groupPeerNote, memberKeys, evidenceLabel }) => {
-                  // 묶음을 접었으므로 조치도 묶음 전체로 본다. 대표 줄만 보면 다른 구성원에 걸린 질문을 놓친다.
-                  const askable = memberKeys.some((key) => askableQuestionKeys.has(key));
-                  const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
-                  /*
-                    조치는 ① 그룹 판정 기준으로 걸고 ② 현재 차수에서만 건다.
-                    ①이 없으면 이미 충족된 택일 그룹인데 개별 요건이 UNKNOWN이라고 다시 묻는다.
-                    ②가 없으면 기준 v1 요건에서 「원문 확인」을 눌렀을 때 Evidence 화면이 현재 차수 분석만 써서
-                    같은 evidence key를 가진 v2 근거가 열린다. 기준 차수에서는 같은 화면의 「근거 보기」만 쓴다. (#147 리뷰 필수 2)
-                  */
-                  const actionable = !viewingBaseline && status === 'UNKNOWN';
-                  const companyValueText = groupPeerNote
-                    ? `${companyValue(requirement, company, judgment)} · ${groupPeerNote}`
-                    : companyValue(requirement, company, judgment);
-                  return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { navigateTo(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
-                }) :<div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
+                {verdictViews.length ? verdictViews.map(renderRequirementRow) : views.length ? <div className="px-6 py-8 text-center text-[15px] text-[var(--product-muted)]">이 공고에는 업종코드·소재지·기업 규모·품명번호로 정한 핵심 자격이 없습니다. 아래 확인할 항목을 봐 주세요.</div> : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
+
+            {blockingGaps.length > 0 && (
+              <section className="mt-4 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
+                <strong className="text-[15px] text-[var(--product-warn)]">핵심 자격 중 확인이 필요한 조항 {blockingGaps.length}건</strong>
+                <p className="mt-1 text-[13px] leading-5 text-[var(--product-muted)]">업종·소재지·기업 규모·품명번호가 적혀 있는데 요건으로 정리하지 못한 조항입니다. 이 조항 때문에 결론이 「확인 필요」일 수 있으니 원문을 확인해 주세요.</p>
+                <ul className="mt-3 grid gap-2">{blockingGaps.map(renderGap)}</ul>
+              </section>
+            )}
+
+            {/*
+              ── 5-1 확인할 항목 ──
+              이름으로만 적힌 인증·면허, 실적, 인력처럼 회사 정보와 기계적으로 맞춰 볼 수 없는 요건과,
+              엔진이 요건으로 정리하지 못한 조항(생산시설 조건 등)이다. 종합 판정에 넣지 않으므로
+              사용자가 원문을 보고 확인해야 한다는 것을 핵심 자격과 다른 자리에서 분명히 말한다.
+            */}
+            {(checklistViews.length > 0 || checklistGaps.length > 0) && (
+              <section className="mt-8">
+                <h2 className="text-[21px] font-extrabold tracking-[-0.02em]">확인할 항목 {checklistCount}건</h2>
+                <p className="mt-1 max-w-4xl text-[15px] leading-6 text-[var(--product-muted)]">인증서·실적처럼 이름이나 조건으로만 적혀 있어 회사 정보와 자동으로 맞춰 볼 수 없는 항목입니다. 종합 판정에는 넣지 않았으니 원문을 보고 직접 확인해 주세요.</p>
+                {checklistViews.length > 0 && (
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
+                    <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[13px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
+                    {checklistViews.map(renderRequirementRow)}
+                  </div>
+                )}
+                {checklistGaps.length > 0 && (
+                  <div className="mt-4 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
+                    <strong className="text-[15px] text-[var(--product-warn)]">요건으로 정리하지 못한 조항 {checklistGaps.length}건</strong>
+                    <ul className="mt-3 grid gap-2">{checklistGaps.map(renderGap)}</ul>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ── 5-2 참고 정보 ── 공동수급·하도급 허용 여부. 회사 자격이 아니라 입찰 방식이라 판정과 확인 항목 어디에도 넣지 않는다. */}
+            {referenceNotes.length > 0 && (
+              <section className="mt-6 rounded-[18px] border border-[var(--product-line)] bg-white px-5 py-4">
+                <h2 className="text-[17px] font-extrabold">참고 정보</h2>
+                <p className="mt-1 text-[13px] text-[var(--product-muted)]">공동수급·하도급 허용 여부, 건설업역 상호시장 진출 허용처럼 회사 자격이 아니라 입찰 방식에 관한 안내입니다.</p>
+                <ul className="mt-3 grid gap-1.5">
+                  {Array.from(new Map(referenceNotes.map((note) => [note.raw.replace(/\s+/g, ''), note.raw])).values()).map((raw) => (
+                    <li key={raw} className="text-[14px] leading-6 text-[var(--product-body)]">{raw}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             {/*
               ── 6 변경공고 영향 ──
@@ -923,6 +1392,15 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
               전에는 「분석 완전성」 한 칸과 3칸 카드가 따로 있었는데, 둘 다 「무엇을 근거로 이 판정이 나왔나」를
               말하는 값이라 한 덩어리로 합친다. 카드 여섯 칸이 세로로 쌓이던 것이 한 줄이 된다.
             */}
+            {/* ── 공고 문서 원문 ── 판정에 쓴 조항이 원문 어디에 있는지 한눈에 보도록 하단에 접어 둔다. */}
+            {sourceVersion && (
+              <DocumentSourceViewer
+                key={`${sourceVersion.id}-${shownAnalysis?.id ?? ''}`}
+                documents={sourceVersion.documents}
+                highlights={sourceHighlights}
+              />
+            )}
+
             <section className="mt-10 rounded-[20px] border border-[var(--product-line)] p-6">
               <h2 className="text-[18px] font-extrabold">이 판정에 쓴 것</h2>
               <p className="mt-1 text-[15px] leading-6 text-[var(--product-muted)]">분석이 어디까지 돌았는지와 대조에 쓴 회사 정보입니다. 판정 결과와는 분리해서 봅니다.</p>
@@ -940,7 +1418,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 </div>
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">자격요건 · 근거</span>
-                  <strong className="mt-0.5 block text-[15px]">{countedAnalysis ? `${countedAnalysis.requirements.length}건` : '-'} · 근거 {countedAnalysis ? `${countedAnalysis.evidence.length}건` : '-'}</strong>
+                  <strong className="mt-0.5 block text-[15px]">{countedAnalysis ? `${countedAnalysis.requirements.length}건` : '-'} · 근거 {countedAnalysis ? `${citedEvidenceCount(countedAnalysis)}건` : '-'}</strong>
                   {/* 요건 0건인데 근거만 여러 건이면 숫자만 보고는 뭐가 잘못됐는지 알 수 없다. */}
                   {countedAnalysis && countedAnalysis.requirements.length === 0 && countedAnalysis.evidence.length > 0 && (
                     <p className="mt-1 text-[13px] leading-[1.7] text-[var(--product-muted)]">근거 문장은 찾았지만 구조화된 자격요건으로 옮기지 못했습니다.</p>
@@ -966,4 +1444,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       </div>
     </main>
   );
+}
+
+/**
+ * 나라장터 공고 상세 주소. 수집한 상세 주소가 나라장터 것이면 그대로 쓰고, 없으면 공고번호로 만든다.
+ * 다른 곳을 가리키는 주소는 쓰지 않는다(2026-10-14).
+ */
+function g2bNoticeUrl(detailUrl: string | null | undefined, bidNoticeNo: string) {
+  if (detailUrl && detailUrl.startsWith('https://www.g2b.go.kr/')) return detailUrl;
+  return `https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=${encodeURIComponent(bidNoticeNo)}`;
 }

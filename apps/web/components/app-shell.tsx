@@ -1,12 +1,15 @@
 'use client';
+import { clearSharedData } from '@/lib/shared-query-cache';
 
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { AppUserProvider } from '@/components/app-user-context';
 import { CopilotProvider } from '@/components/copilot/provider';
 import { CopilotPanel } from '@/components/copilot/panel';
+import { MembershipModal } from '@/components/membership-modal';
 
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
@@ -14,6 +17,7 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 import { replaceWith } from '@/lib/navigation';
+import { forgetCase } from '@/lib/last-case';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -48,6 +52,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       description: '판정한 모든 항목에 공고 원문 근거를 함께 표시합니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토',
       variant: 'tall',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -57,6 +63,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '확인 필요에 답하기',
       description: '이유가 셋이고, 이유마다 하실 일이 다릅니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 확인 필요',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -66,6 +74,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '근거 원문 대조',
       description: '왼쪽은 공고 원문, 오른쪽은 그 원문으로 내린 판정입니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 근거 대조',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -76,6 +86,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '평가 대응',
       description: '배점 원문과 회사 프로필의 대응값을 나란히 확인합니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 평가 대응',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
   {
@@ -85,6 +97,39 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '변경 이력',
       description: '공고가 바뀐 곳과, 그 때문에 다시 판정한 항목을 보여줍니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 변경 이력',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
+    },
+  },
+  {
+    match: (pathname) => pathname.startsWith('/admin'),
+    page: { title: '운영 관리', description: '관리자 전용 작업 상태 및 라벨 검수', breadcrumb: '홈 › 운영 관리' },
+  },
+  {
+    match: (pathname) => pathname.startsWith('/copilot'),
+    page: {
+      title: 'AI Copilot',
+      description: '검토 중인 공고마다 나눈 대화를 이어서 봅니다.',
+      breadcrumb: '홈 › AI Copilot',
+      showTitleBand: false,
+    },
+  },
+  {
+    match: (pathname) => pathname.startsWith('/prep-guide'),
+    page: {
+      title: '입찰 준비 지침서',
+      description: '판정을 마친 공고에 대해 준비할 것과 순서를 정리합니다.',
+      breadcrumb: '홈 › 준비 지침서',
+      showTitleBand: false,
+    },
+  },
+  {
+    match: (pathname) => pathname.startsWith('/recommendations'),
+    page: {
+      title: 'AI 추천',
+      description: '우리 회사에 어울리는 입찰 공고를 찾고, 관심 있는 공고의 참가자격을 확인합니다.',
+      breadcrumb: '홈 › AI 추천',
+      showTitleBand: false,
     },
   },
   {
@@ -93,6 +138,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '회사 프로필',
       description: '공고 판정에 사용하는 회사 값을 출처와 함께 관리합니다.',
       breadcrumb: '홈 › 회사 프로필',
+      // 내 입찰 건과 회사 프로필은 제목 띠 없이 바로 내용으로 시작한다(2026-10-12).
+      showTitleBand: false,
     },
   },
 ];
@@ -108,38 +155,68 @@ function pageInfoFor(pathname: string): PageInfo {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const page = pageInfoFor(pathname);
+  // 로그인·회원가입 화면만 로그인 없이 연다.
+  const isPublicPage = pathname === '/login' || pathname === '/signup';
+  const isProtectedPage = !isPublicPage;
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
+  const [checkingAuth, setCheckingAuth] = useState(!isPublicPage);
   const [authFailure, setAuthFailure] = useState<string | null>(null);
   const [logoutFailure, setLogoutFailure] = useState<string | null>(null);
   const [authAttempt, setAuthAttempt] = useState(0);
+  const lastAuthCheckAt = useRef(0);
+  const lastAuthenticatedUserId = useRef<string | null>(null);
+
 
   useEffect(() => {
-    if (pathname === '/login') return;
+    if (!isProtectedPage) return;
     let active = true;
-    void getCurrentUser()
-      .then((current) => {
-        if (active) setUser(current);
-      })
-      .catch((cause) => {
-        if (!active) return;
-        if (cause instanceof ApiError && cause.status === 401) {
-          window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
-          setUser(null);
-          replaceWith('/login');
-          return;
-        }
-        setAuthFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);
-      })
-      .finally(() => {
-        if (active) setCheckingAuth(false);
-      });
+    const verifySession = () => {
+      lastAuthCheckAt.current = Date.now();
+      void getCurrentUser()
+        .then((current) => {
+          if (!active) return;
+          const previousId = lastAuthenticatedUserId.current;
+          if (previousId && previousId !== current?.id) {
+            clearSharedData();
+            // Do not render cached data under another user's session.
+            if (current?.id) {
+              replaceWith('/company');
+              return;
+            }
+          }
+          lastAuthenticatedUserId.current = current?.id ?? null;
+          setUser(current);
+        })
+        .catch((cause) => {
+          if (!active) return;
+          if (cause instanceof ApiError && cause.status === 401) {
+            window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+            forgetCase();
+            setUser(null);
+            replaceWith('/login');
+            return;
+          }
+          setAuthFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);
+        })
+        .finally(() => {
+          if (active) setCheckingAuth(false);
+        });
+    };
+
+    verifySession();
+    // Focus revalidates old sessions. Protected client-side routes share the same
+    // mounted auth check and never cancel an in-flight request on navigation.
+    const onFocus = () => {
+      if (Date.now() - lastAuthCheckAt.current >= 60_000) verifySession();
+    };
+    window.addEventListener('focus', onFocus);
     return () => {
       active = false;
+      window.removeEventListener('focus', onFocus);
     };
-  }, [authAttempt, pathname]);
+  }, [authAttempt, isProtectedPage]);
 
-  if (pathname === '/login') return children;
+  if (isPublicPage) return children;
 
   if (checkingAuth) {
     return (
@@ -176,11 +253,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await logout();
       window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+      forgetCase();
       setUser(null);
       replaceWith('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
         window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+        forgetCase();
         setUser(null);
         replaceWith('/login');
         return;
@@ -198,7 +277,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         : '';
 
   return (
-    <CopilotProvider>
+    <AppUserProvider user={user}>
+      <CopilotProvider userId={user?.id ?? 'anonymous'}>
       <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
         <AppHeader pathname={pathname} user={user} onLogout={() => void handleLogout()} />
         {logoutFailure && (
@@ -214,10 +294,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             variant={page.variant}
           />
         )}
-        <div className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
+        <div id="main-content" tabIndex={-1} className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
         <AppFooter />
         <CopilotPanel />
+        <MembershipModal />
       </div>
-    </CopilotProvider>
+      </CopilotProvider>
+    </AppUserProvider>
   );
 }

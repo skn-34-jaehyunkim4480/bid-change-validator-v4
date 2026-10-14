@@ -413,6 +413,50 @@ def test_a_detail_found_nowhere_in_the_notice_is_still_rejected():
     assert "금액_raw" in reason
 
 
+def test_detail_cannot_be_fabricated_across_document_boundary():
+    chunks = [
+        {"text": "서울 소재 업체는 등록 필요", "source_blocks": [{"document_id": "notice"}]},
+        {"text": "5억원 이상 실적이 있어야 함", "source_blocks": [{"document_id": "rfp"}]},
+    ]
+    slot = {"raw": "서울 소재 업체는 등록 필요", "금액_raw": "필요5억원"}
+
+    ok, reason, _ = validate_extracted_slot(slot, chunks)
+
+    assert not ok
+    assert "금액_raw" in reason
+    assert slot["_rejected_detail"]["part"] == "필요5억원"
+
+
+def test_detail_cannot_be_fabricated_across_neighbouring_chunks():
+    chunks = [
+        {"text": "최근 3년 실적이 있는 업체. 금액", "chunk_id": "one"},
+        {"text": "5억원 이상 사업 예산", "chunk_id": "two"},
+    ]
+    slot = {"raw": "최근 3년 실적이 있는 업체", "금액_raw": "금액5억원"}
+
+    ok, reason, _ = validate_extracted_slot(slot, chunks)
+
+    assert not ok
+    assert "금액_raw" in reason
+
+
+def test_legacy_extraction_rejects_a_detail_spanning_source_chunks():
+    chunks = [
+        {"text": "3. 입찰참가자격\n최근 3년 실적이 있는 업체. 금액", "chunk_id": "one"},
+        {"text": "5억원 이상 실적 필요", "chunk_id": "two"},
+    ]
+    result = extract_legacy_slots(
+        chunks,
+        structured_extract=lambda *_: {"requirements": [
+            {"유형": "실적요건", "raw": "최근 3년 실적이 있는 업체", "금액_raw": "금액5억원"}
+        ]},
+        max_retry=0,
+    )
+
+    assert result["slots"] == []
+    assert result["dropped_requirements"][0]["reason_code"] == "DETAIL_NOT_FOUND_IN_SOURCE"
+
+
 def test_semicolon_joined_details_are_checked_part_by_part():
     """실측(2026-09-14)에서 나온 실제 값. 조각은 전부 원문에 있는데 이어붙인 문자열은 없다."""
     source = (
