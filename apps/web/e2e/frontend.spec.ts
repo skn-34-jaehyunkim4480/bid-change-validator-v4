@@ -82,48 +82,35 @@ test('login without JavaScript keeps submit disabled until hydration', async ({ 
     await context.close();
   }
 });
-test('guide uses a single shared title band and keeps complete content', async ({ page }) => {
+test('usage guide lives at the bottom of the notice page and the guide tab is gone', async ({ page }) => {
   await mockApi(page);
-  await page.goto('/guide');
+  await page.goto('/notices');
   await expect(page.locator('nav.app-primary-nav')).toBeVisible();
-  await expect(page.locator('.app-title-band h1')).toHaveText('이용안내');
-  await expect(page.getByRole('heading', { name: '이용안내', level: 1 })).toHaveCount(1);
-  await expect(page.locator('#main-content ol > li')).toHaveCount(3);
-  await expect(page.locator('#main-content main section')).toHaveCount(5);
-
-  // A client-side transition must not reintroduce the fallback title.
-  await page.locator('nav.app-primary-nav a[href="/notices"]').click();
-  await expect(page).toHaveURL(/\/notices$/);
-  await page.locator('nav.app-primary-nav a[href="/guide"]').click();
-  await expect(page).toHaveURL(/\/guide$/);
-  await expect(page.locator('.app-title-band')).toHaveCount(1);
-  await expect(page.locator('.app-title-band h1')).toHaveText('이용안내');
+  const guide = page.locator('#usage-guide');
+  await expect(guide.getByRole('heading', { name: '이용 안내', level: 2 })).toBeVisible();
+  await expect(guide.locator('ol > li')).toHaveCount(3);
+  await expect(guide.getByRole('heading', { name: '이 서비스가 하지 않는 것' })).toBeVisible();
+  // 이용안내 탭은 없다. 예전 주소로 들어가면 찾을 수 없는 화면이다.
+  await expect(page.locator('nav.app-primary-nav a[href="/guide"]')).toHaveCount(0);
+  const response = await page.goto('/guide');
+  expect(response?.status()).toBe(404);
 });
 
-test('title bands share spacing on the pages that keep them, and case pages start without one', async ({ page }) => {
+test('recommendations uses a rounded profile-style header and plain-language descriptions', async ({ page }) => {
   await mockApi(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const pages = [
-    ['/recommendations', 'AI 추천', '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.', '홈 › 공고 추천'],
-    ['/guide', '이용안내', '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.', '홈 › 이용안내'],
-  ];
-  const positions = [];
-  for (const [route, title, description, crumb] of pages) {
-    await page.goto(route);
-    const band = page.locator('.app-title-band');
-    await expect(band).toHaveCount(1);
-    await expect(band).toHaveCSS('height', '142px');
-    await expect(band.locator('h1')).toHaveText(title);
-    await expect(band.locator('p').first()).toHaveText(description);
-    await expect(band.locator('p').last()).toHaveText(crumb);
-    positions.push(await band.evaluate(section => {
-      const top = section.getBoundingClientRect().top;
-      return [section.querySelector('h1'), section.querySelector('h1 + p'), section.querySelector(':scope > div > p:last-child')]
-        .map(el => Math.round(el!.getBoundingClientRect().top - top));
-    }));
-  }
-  for (const position of positions.slice(1)) expect(position).toEqual(positions[0]);
-  // 내 입찰 건과 회사 프로필은 제목 띠 없이 내용으로 바로 시작한다.
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j22', name: '합성회사 J22' }],
+  }));
+  await page.goto('/recommendations');
+  await expect(page.locator('.app-title-band')).toHaveCount(0);
+  const hero = page.locator('section[aria-labelledby="recommendations-page-title"]');
+  await expect(hero).toHaveCount(1);
+  await expect(hero).toHaveCSS('border-radius', '22px');
+  await expect(hero.getByRole('heading', { name: 'AI 추천', level: 1 })).toBeVisible();
+  await expect(hero.getByText('홈 › AI 추천')).toHaveCount(0);
+  await expect(hero.getByText('우리 회사에 어울리는 입찰 공고를 찾아드립니다.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.getByText('BM25 기반 검색이며', { exact: false })).toHaveCount(0);
   for (const route of ['/qualification', '/company']) {
     await page.goto(route);
     await expect(page.locator('.app-title-band')).toHaveCount(0);
@@ -157,7 +144,7 @@ test('qualification navigation opens latest case before the slow analysis result
     if (path === '/api/v1/preflight-cases/case-e2e/qualification-judgment-runs') return route.fulfill({ status: 200, json: [] });
     return route.fallback();
   });
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await page.locator('nav.app-primary-nav a[href="/qualification"]').click();
   await expect(page).toHaveURL(/\/qualification\?caseId=case-e2e$/);
   await expect(page.getByRole('heading', { name: '단계별 로딩 테스트 공고' })).toBeVisible();
@@ -174,7 +161,7 @@ test('qualification navigation opens latest case before the slow analysis result
     notice: requests.filter((url) => url === '/api/v1/notices/notice-e2e').length,
     versions: requests.filter((url) => url === '/api/v1/notices/notice-e2e/versions').length,
   };
-  await page.locator('nav.app-primary-nav a[href="/guide"]').click();
+  await page.locator('nav.app-primary-nav a[href="/recommendations"]').click();
   await page.locator('nav.app-primary-nav a[href="/qualification"]').click();
   await expect(page).toHaveURL(/\/qualification\?caseId=case-e2e$/);
   await expect(page.getByRole('button', { name: '참가자격 검토 시작' }).first()).toBeVisible();
@@ -200,8 +187,8 @@ test('cached notice list survives route round trip without another GET or empty-
   expect(before.companyGets).toBe(1);
 
   for (let index = 0; index < 3; index++) {
-    await page.locator('nav.app-primary-nav a[href="/guide"]').click();
-    await expect(page).toHaveURL(/\/guide$/);
+    await page.locator('nav.app-primary-nav a[href="/recommendations"]').click();
+    await expect(page).toHaveURL(/\/recommendations$/);
     await page.locator('nav.app-primary-nav a[href="/notices"]').click();
     await expect(page).toHaveURL(/\/notices$/);
     await expect(page.getByText('2026-0001').first()).toBeVisible();
@@ -213,7 +200,7 @@ test('cached notice list survives route round trip without another GET or empty-
 
 test('session expiration redirects safely to login', async ({ page }) => {
   await mockApi(page, { authenticated: false });
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await expect(page).toHaveURL(/\/login$/);
 });
 
@@ -221,7 +208,7 @@ for (const width of [360, 768, 1440]) {
   test('authenticated shell and keyboard access at width ' + width, async ({ page }, testInfo) => {
     await mockApi(page);
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/guide');
+    await page.goto('/recommendations');
     await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toBeVisible({ timeout: 15_000 });
     const skip = page.getByRole('link', { name: '본문으로 건너뛰기' });
     await skip.focus();
@@ -230,7 +217,7 @@ for (const width of [360, 768, 1440]) {
     await expect(page.locator('#main-content')).toBeFocused();
     const size = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
     expect(size.document).toBeLessThanOrEqual(size.viewport + 1);
-    await page.screenshot({ path: testInfo.outputPath('guide-' + width + '.png'), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath('recommendations-' + width + '.png'), fullPage: true });
   });
 }
 
@@ -260,61 +247,70 @@ test('server errors show an actionable retry instead of false success', async ({
   await expect(page.getByText('일시적으로 공고를 조회할 수 없습니다.')).toBeVisible();
   await expect(page.getByRole('button', { name: /다시 시도/ })).toBeEnabled();
 });
-test('ML POST contract distinguishes learned rank from qualification (MOCK)', async ({ page }) => {
+test('primary BM25 recommendations load automatically, hide legacy fallback, group duplicates and page results', async ({ page }) => {
   await mockApi(page);
-  await page.route('**/api/v1/companies', route => route.fulfill({
-    status: 200, json: [{ id: 'company-a', name: '로컬 테스트 회사' }],
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j20', name: '합성회사 J20' }],
   }));
-  await page.route('**/api/v1/recommendations/ml', route => {
-    expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toMatchObject({ company_id: 'company-a', limit: 50 });
+  let legacyCalls = 0;
+  await page.route('**/api/v1/recommendations/ml', (route) => {
+    legacyCalls++;
+    return route.fulfill({ status: 200, json: { items: [], needs_review_items: [] } });
+  });
+  const item = (number: number, title = '행사 운영 ' + number) => ({
+    notice_id: 'notice-' + number, title, rank: number, relevance_score: 30 - number,
+    reason: 'Model-generated text similarity; no directly matching keyword identified',
+    version_number: 1, analysis_run_id: null, analysis_version: null, analysis_status: 'UNKNOWN',
+    qualification_state: 'UNKNOWN', qualification_reason: 'No successful current-version analysis',
+    rule_version: null, is_stale: false, deadline_source: number === 2 ? 'assumed_40_days' : 'explicit', effective_deadline: null,
+  });
+  const rows = [...Array.from({ length: 12 }, (_, i) => item(i + 1)), item(13, '행사 운영 1')];
+  let actualSearchCalls = 0;
+  await page.route('**/api/v1/recommendations/ml-experimental', (route) => {
+    actualSearchCalls++;
+    expect(route.request().postDataJSON()).toMatchObject({
+      company_id: 'company-j20', limit: 50, mode: 'bm25', query_strategy: 'industry_v1',
+    });
     return route.fulfill({ status: 200, json: {
-      model_version: 'mock-model-v1', dataset_version: 'mock-dataset',
-      scoring_source: 'local_lightgbm', input_sha256: null, fallback_reason: null,
-      fallback_used: false, total_valid_candidates: 2,
-      note: 'Ranking is not a probability', items: [{
-        notice_id: 'notice-a', title: '로컬 E2E 공고', rank: 1, relevance_score: 0.88,
-        reason: 'Text relevance', version_number: 1, analysis_run_id: null,
-        analysis_version: null, analysis_status: 'SUCCEEDED', qualification_state: 'core_met',
-        qualification_reason: 'Verified', rule_version: 'test', is_stale: false,
-        deadline_source: 'explicit', effective_deadline: '2026-10-10T00:00:00Z',
-      }], needs_review_items: [{
-        notice_id: 'notice-b', title: '추가 확인 공고', rank: 1, relevance_score: 0.76,
-        reason: 'Text relevance', version_number: 1, analysis_run_id: null,
-        analysis_version: null, analysis_status: 'UNKNOWN', qualification_state: 'needs_review',
-        qualification_reason: 'Insufficient evidence', rule_version: null, is_stale: false,
-        deadline_source: 'assumed_40_days', effective_deadline: '2026-10-20T00:00:00Z',
-      }],
+      experiment: 'offline_task_corpus_v1', query_strategy_used: 'industry_v1',
+      mode_requested: 'bm25', mode_used: 'bm25', fallback_used: true,
+      fallback_reason: 'UNINDEXED_LIVE_TITLE_FALLBACK',
+      valid_live_candidates: 3589, indexed_live_candidates: 344,
+      live_title_fallback_candidates: 3245, stale_source_documents: 0,
+      retrieval_latency_ms: 31, task_source_status: 'UNVERIFIED_NO_INDEPENDENT_ACCURACY',
+      note: 'Not independently validated', items: [], needs_review_items: rows,
     } });
   });
   await page.goto('/recommendations');
-  await expect(page.getByText('MOCK · 실제 모델 결과 아님')).toBeVisible();
-  await expect(page.getByText('학습 모델 기반 연관성 순위')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('0.880')).toBeVisible();
-  await expect(page.getByText('핵심 요건 충족')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '확인 필요 공고' })).toBeVisible();
-  await expect(page.getByText('추가 확인 공고')).toBeVisible();
-  await expect(page.getByRole('link', { name: /공고 상세·첨부 원문/ }))
-    .toHaveAttribute('href', '/notices/notice-a');
-  await expect(page.getByText('88%')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.getByText('현재 추천 대상으로 분류한 공고 3589건에서 찾았습니다.')).toBeVisible();
+  await page.getByText('검색 범위 자세히 보기').click();
+  await expect(page.getByText('공고명으로만 검색한 공고 3245건', { exact: false })).toBeVisible();
+  await expect(page.getByText('참가자격: 확인 전', { exact: false }).first()).toBeVisible();
+  await expect(page.getByText('행사 운영 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('행사 운영 11', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('동일 제목의 다른 공고 1건', { exact: false })).toBeVisible();
+  await expect(page.getByText('Model-generated text similarity', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('마감일이 확인되지 않아 게시일 기준으로 임시 추천한 공고입니다.', { exact: false })).toHaveCount(1);
+  await expect(page.getByText('model_not_configured')).toHaveCount(0);
+  expect(legacyCalls).toBe(0);
+  expect(actualSearchCalls).toBe(1);
+  await page.getByRole('button', { name: /더 보기/ }).click();
+  await expect(page.getByText('행사 운영 11', { exact: true })).toBeVisible();
 });
 
-test('lexical fallback never claims a trained model (MOCK)', async ({ page }) => {
+test('primary recommendations fail closed without showing legacy pseudo-recommendations', async ({ page }) => {
   await mockApi(page);
-  await page.route('**/api/v1/companies', route => route.fulfill({
-    status: 200, json: [{ id: 'company-a', name: '로컬 회사' }],
+  await page.route('**/api/v1/companies', (route) => route.fulfill({
+    status: 200, json: [{ id: 'company-j20', name: '합성회사 J20' }],
   }));
-  await page.route('**/api/v1/recommendations/ml', route => route.fulfill({
-    status: 200, json: {
-      model_version: null, dataset_version: null, scoring_source: 'lexical_fallback',
-      input_sha256: null, fallback_reason: 'model_not_configured',
-      fallback_used: true, total_valid_candidates: 0,
-      note: 'Not a trained model', items: [], needs_review_items: [],
-    },
+  await page.route('**/api/v1/recommendations/ml-experimental', (route) => route.fulfill({
+    status: 503, json: { detail: 'Artifacts not configured' },
   }));
   await page.goto('/recommendations');
-  await expect(page.getByText('학습 모델 미적용 — 키워드 기반 대체 순위')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('검증된 핵심 요건 충족 추천 결과가 없습니다. 확인 필요 공고는 아래에 별도로 표시합니다.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '기업 맞춤 공고 추천' })).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="ml-experiment-heading"]').getByRole('alert')).toContainText('서버에서 비활성');
+  await expect(page.getByText('학습 모델 미적용')).toHaveCount(0);
 });
 
 test('admin view denies non-admin and does not invoke mutations (MOCK)', async ({ page }) => {
@@ -400,13 +396,13 @@ test('recommendations and admin reuse AppShell session without duplicate auth ch
     if (request.resourceType() === 'document') documentLoads++;
   });
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/guide');
+  await page.goto('/notices');
   await expect(page.locator('nav.app-primary-nav a[href="/admin"]')).toBeVisible();
   await expect.poll(() => authChecks).toBe(1);
   await page.evaluate(() => { (window as Window & { __authStateProof?: string }).__authStateProof = 'kept'; });
   const initialDocuments = documentLoads;
   for (let index = 0; index < 5; index++) {
-    for (const pathname of ['/recommendations', '/admin', '/guide']) {
+    for (const pathname of ['/recommendations', '/admin', '/notices']) {
       await page.locator('nav.app-primary-nav a[href="' + pathname + '"]').click();
       await expect(page).toHaveURL(new RegExp(pathname + '$'));
     }
@@ -427,19 +423,19 @@ test('client navigation preserves document and avoids repeated auth checks', asy
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
 
-  await page.goto('/guide');
+  await page.goto('/recommendations');
   await expect(page.locator('nav.app-primary-nav')).toBeVisible();
   await page.evaluate(() => { (window as Window & { __navigationProof?: string }).__navigationProof = 'kept'; });
   const initialDocuments = documentLoads;
 
   for (let index = 0; index < 20; index++) {
-    const pathname = index % 2 ? '/guide' : '/notices';
+    const pathname = index % 2 ? '/recommendations' : '/notices';
     await page.locator(`nav.app-primary-nav a[href="${pathname}"]`).click();
     await expect(page).toHaveURL(new RegExp(`${pathname}$`));
   }
   await page.goBack();
   await page.goForward();
-  await expect(page).toHaveURL(/\/guide$/);
+  await expect(page).toHaveURL(/\/recommendations$/);
 
   expect(await page.evaluate(() => (window as Window & { __navigationProof?: string }).__navigationProof))
     .toBe('kept');

@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from './api';
+import { copilotChatPath } from './django-qa-routing';
 import { buildCopilotTransport, type CopilotTransportRequest } from './copilot-transport';
 import { validateEnvelope } from './copilot-v31';
 import type { CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot-api';
@@ -24,7 +25,7 @@ async function sendConversationMessage(request: ConversationRequest): Promise<Co
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 70000);
   try {
-    const response = await apiFetch(general ? '/api/v1/copilot/general-chat' : '/api/v1/copilot/chat', {
+    const response = await apiFetch(copilotChatPath({ general, documentProcessing: request.document_processing === true, semanticProcessing: request.semantic_processing === true, responseVersion: request.document_processing && !request.semantic_processing ? 'legacy' : '3.1', intent: request.intent, hasAction: Boolean(request.user_input || request.job_id || request.question_id) }, process.env.NEXT_PUBLIC_DJANGO_QA_ENABLED === 'true'), {
       method: 'POST',
       signal: controller.signal,
       headers,
@@ -164,6 +165,12 @@ export class ConversationStore {
   }
   private update(caseId: string, patch: Partial<Conversation>) {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
+    this.listeners.forEach(fn => fn());
+  }
+  /** 모든 대화를 비운다. 계정이 바뀔 때 앞 계정의 대화가 화면에 남지 않게 한다. */
+  reset() {
+    this.states.clear();
+    this.failed.clear();
     this.listeners.forEach(fn => fn());
   }
   /** 대화가 있는 검토 건의 id. 대화 목록(전용 화면의 왼쪽)이 쓴다. */

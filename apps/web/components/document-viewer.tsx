@@ -27,7 +27,7 @@ async function initializeRhwp() {
   return rhwp;
 }
 
-function HwpViewer({ sourceUrl }: { sourceUrl: string }) {
+function HwpViewer({ sourceUrl, textUrl }: { sourceUrl: string; textUrl: string }) {
   const documentRef = useRef<HwpDocument | null>(null);
   const [page, setPage] = useState(0);
   const [pageCount, setPageCount] = useState(0);
@@ -74,7 +74,17 @@ function HwpViewer({ sourceUrl }: { sourceUrl: string }) {
     setSvg(instance.renderPageSvg(nextPage));
   }
 
-  if (error) return <ViewerMessage icon={FileQuestion} message={error} />;
+  if (error) return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <output className="block border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        HWP 원본 미리보기를 불러오지 못해 추출된 텍스트를 표시합니다.
+        <a href={absoluteApiUrl(sourceUrl)} target="_blank" rel="noopener noreferrer" className="ml-2 font-semibold underline">
+          원본 파일 열기
+        </a>
+      </output>
+      <TextViewer textUrl={textUrl} />
+    </div>
+  );
   if (!svg) return <ViewerMessage icon={LoaderCircle} message="HWP 원문 렌더링 중…" spin />;
 
   const isolatedPage = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff}svg{display:block;width:100%;height:auto}</style></head><body>${svg}</body></html>`;
@@ -153,7 +163,7 @@ export function DocumentViewer({
 }) {
   if (!document) return <ViewerMessage icon={FileQuestion} message={emptyMessage} />;
   if (document.viewer_type === 'RHWP') {
-    return <HwpViewer key={document.render_source_url} sourceUrl={document.render_source_url} />;
+    return <HwpViewer key={document.render_source_url} sourceUrl={document.render_source_url} textUrl={document.text_url} />;
   }
   if (document.viewer_type === 'PDF') {
     return (
@@ -162,6 +172,19 @@ export function DocumentViewer({
         src={absoluteApiUrl(document.preview_url ?? document.render_source_url)}
         title={document.name}
       />
+    );
+  }
+  if (document.extraction_status !== 'EXTRACTED') {
+    return (
+      <div className="grid min-h-0 flex-1 place-items-center px-6 py-12 text-center text-sm text-slate-600">
+        <div>
+          <FileQuestion className="mx-auto mb-3 size-7 opacity-50" />
+          <p>이 파일은 화면 미리보기를 지원하지 않습니다. 원본 파일을 확인해 주세요.</p>
+          <a href={absoluteApiUrl(document.render_source_url)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block font-semibold text-blue-700 underline">
+            원본 파일 열기
+          </a>
+        </div>
+      </div>
     );
   }
   return <TextViewer key={document.text_url} textUrl={document.text_url} />;

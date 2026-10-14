@@ -6,6 +6,7 @@ Run on the EC2 host. Never print secret values or commit the generated .env.
 import argparse
 import json
 import os
+import secrets
 import subprocess
 from pathlib import Path
 from urllib.parse import quote
@@ -41,6 +42,23 @@ def env_value(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
+def django_qa_secret() -> str:
+    """One-time root-only secret on the deployment host; stable across releases."""
+    secret_file = Path('/opt/bidcheck/django-qa.secret')
+    if not secret_file.exists():
+        try:
+            fd = os.open(secret_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, 'w', encoding='utf-8') as output:
+                output.write(secrets.token_hex(32))
+    value = secret_file.read_text(encoding='utf-8').strip()
+    if len(value) < 32:
+        raise ValueError('Invalid Django secret, aborting deployment')
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("sha", help="immutable image tag")
@@ -59,8 +77,18 @@ def main() -> None:
         "RDS_DATABASE_URL": url,
         "DOCUMENT_S3_BUCKET": BUCKET,
         "SITE_DOMAIN": SITE_DOMAIN,
+        # Opt-in only after the private files were staged and SHA-verified.
+        "ML_EXPERIMENTAL_ENABLED": (
+            "true" if Path("/opt/bidcheck/ml-experimental.enabled").is_file()
+            and all((Path("/opt/bidcheck/ml-experimental-artifacts") / f).is_file()
+                    for f in ("corpus.json", "vectors.json"))
+            else "false"
+        ),
         **secrets,
     }
+    if Path('/opt/bidcheck/django-qa.enabled').is_file():
+        values['DJANGO_QA_IMAGE'] = f'{REGISTRY}/bidcheck-v4-api:django-{args.sha}'
+        values['DJANGO_QA_SECRET_KEY'] = django_qa_secret()
     target = Path("/opt/bidcheck/.env")
     temporary = target.with_suffix(".env.tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

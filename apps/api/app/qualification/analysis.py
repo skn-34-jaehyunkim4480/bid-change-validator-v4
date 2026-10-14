@@ -167,18 +167,41 @@ def _persist_result(
     input_fingerprint: str,
     commit: bool = True,
 ) -> QualificationAnalysisRun:
+    # An unparsed attachment must be explicitly called out. This may contain
+    # additional eligibility restrictions, so it also prevents a definitive
+    # "eligible" verdict while preserving the usable HWP/PDF evidence.
+    from .document_readiness import qualification_documents
+    excluded = qualification_documents(version.documents).skipped
+    diagnostics = [item.model_dump(mode="json") for item in result.diagnostics]
+    coverage = result.coverage.model_dump(mode="json") if result.coverage is not None else None
+    if excluded:
+        diagnostics.append({
+            "code": "UNSUPPORTED_ATTACHMENT_EXCLUDED",
+            "severity": "WARNING",
+            "kind": "PIPELINE",
+            "message": "미지원 첨부파일은 분석에서 제외되었습니다. 해당 파일의 요건은 별도로 확인하세요.",
+            "details": {"file_names": list(excluded), "count": len(excluded)},
+            "evidence_keys": [],
+        })
+        if coverage is not None:
+            coverage.setdefault("gaps", []).append({
+                "kind": "SECTION",
+                "raw": "미분석 첨부파일: " + ", ".join(excluded),
+                "reason": "UNSUPPORTED_ATTACHMENT_EXCLUDED",
+                "blocks_verdict": True,
+            })
     run = QualificationAnalysisRun(
         notice_version_id=version.id,
         contract_version=result.contract_version,
         analysis_kind=result.analysis_kind,
         status=result.status,
         target_chunk_ids=list(result.target_chunk_ids),
-        diagnostics=[item.model_dump(mode="json") for item in result.diagnostics],
+        diagnostics=diagnostics,
         dropped_requirements=[
             item.model_dump(mode="json") for item in result.dropped_requirements
         ],
         input_fingerprint=input_fingerprint,
-        coverage=result.coverage.model_dump(mode="json") if result.coverage is not None else None,
+        coverage=coverage,
     )
     db.add(run)
     db.flush()

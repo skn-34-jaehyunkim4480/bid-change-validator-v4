@@ -618,6 +618,47 @@ def _extract_hwpml(source: BinaryIO) -> ExtractionResult:
     return _finish("HWPML_XML", blocks)
 
 
+# 그림자·입체 효과가 걸린 글자는 PDF 안에 같은 글자가 조금씩 어긋난 자리에 여러 번 그려져 있다(한컴 PDF 의 표지 제목).
+# 그대로 읽으면 "제 제 제 제 … 안 안 안 안" 처럼 한 글자가 열몇 번씩 되풀이된다.
+_SHADOW_OFFSET_RATIO = 0.15   # 글자 크기의 이 비율 안에서 어긋난 같은 글자는 사본으로 본다(옆 글자는 반 글자 이상 떨어진다)
+_SHADOW_MIN_COPIES = 3        # 한 쪽에서 이만큼은 걸러져야 효과가 걸린 쪽으로 본다
+
+
+def _drop_shadow_copies(chunks: list[tuple[str, float, float, float]]) -> tuple[list[str], int]:
+    """(글자, x, y, 글자 크기) 조각들에서 겹쳐 그린 사본을 뺀다. 남긴 글자들과 뺀 개수를 돌려준다.
+
+    자리를 알 수 없는 조각(pypdf 가 0,0 으로 주는 것)과 공백은 건드리지 않는다.
+    """
+    kept: list[str] = []
+    last_seen: dict[tuple[str, float], tuple[float, float]] = {}
+    dropped = 0
+    for text, x, y, font_size in chunks:
+        key = (text.strip(), font_size)
+        if not key[0] or (x == 0 and y == 0) or font_size <= 0:
+            kept.append(text)
+            continue
+        previous = last_seen.get(key)
+        last_seen[key] = (x, y)
+        limit = font_size * _SHADOW_OFFSET_RATIO
+        if previous is not None and abs(x - previous[0]) <= limit and abs(y - previous[1]) <= limit:
+            dropped += 1
+            continue
+        kept.append(text)
+    return kept, dropped
+
+
+def _pdf_page_text(page: Any) -> str:
+    chunks: list[tuple[str, float, float, float]] = []
+
+    def visit(text: str, _cm: Any, tm: Any, _font: Any, font_size: float) -> None:
+        chunks.append((text, float(tm[4]), float(tm[5]), float(font_size or 0)))
+
+    plain = page.extract_text(visitor_text=visit) or ""
+    kept, dropped = _drop_shadow_copies(chunks)
+    # 효과가 걸리지 않은 쪽은 pypdf 가 준 글을 그대로 쓴다 — 이 보정이 평범한 쪽의 글을 바꾸지 않게 한다.
+    return "".join(kept) if dropped >= _SHADOW_MIN_COPIES else plain
+
+
 def _extract_pdf(source: BinaryIO) -> ExtractionResult:
     source.seek(0)
     reader = PdfReader(source)
@@ -625,7 +666,7 @@ def _extract_pdf(source: BinaryIO) -> ExtractionResult:
         {
             "page": page_number,
             "location": f"p.{page_number}",
-            "text": page.extract_text() or "",
+            "text": _pdf_page_text(page),
         }
         for page_number, page in enumerate(reader.pages, start=1)
     ]

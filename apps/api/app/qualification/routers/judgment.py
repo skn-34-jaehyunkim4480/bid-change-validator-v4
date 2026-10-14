@@ -9,6 +9,7 @@ from ...auth import authorize_case_access, authorize_company_access, get_optiona
 from ...auth_models import AppUser
 from ...database import get_db
 from ...errors import ApiError
+from ...membership import ensure_notice_check_allowed, record_notice_check
 from ...judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationJudgmentTrigger, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
 from ..judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, update_profile_completeness
 from ..judgment_target import run_targeted_qualification_judgment
@@ -41,7 +42,9 @@ def patch_profile_completeness(company_id: UUID, payload: QualificationProfileCo
 
 @router.post("/preflight-cases/{case_id}/qualification-judgments", response_model=QualificationJudgmentRunRead)
 def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgmentTrigger | None = None, db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user)) -> QualificationJudgmentRunRead:
-    authorize_case_access(db, user, case_id)
+    case = authorize_case_access(db, user, case_id)
+    # 요금제 한도: 참가자격 확인은 공고 단위로 센다. 이번 달에 이미 확인한 공고를 다시 검토하는 것은 더 세지 않는다.
+    ensure_notice_check_allowed(db, user, case.notice_id)
     payload = payload or QualificationJudgmentTrigger()
     try:
         run = run_targeted_qualification_judgment(
@@ -50,7 +53,10 @@ def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgment
             analysis_run_id=payload.analysis_run_id,
             reference_date=payload.reference_date,
         )
-        return judgment_run_response(run)
+        response = judgment_run_response(run)
+        record_notice_check(db, user, case.notice_id)
+        db.commit()
+        return response
     except QualificationJudgmentError as error:
         raise _as_api_error(error) from error
 

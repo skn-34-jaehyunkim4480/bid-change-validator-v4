@@ -1,0 +1,154 @@
+﻿# PR C: AWS source-bound relevance review corpus (offline)
+
+**Status: PREPARATION ONLY. No verified full-task labels or accuracy estimate.**
+
+## What has been done (2026-10-13)
+
+- Reused existing WebGPT Windows VM AWS boto3 credentials, and the existing RDS access through EC2 SSM. Queried **read-only** using `SET TRANSACTION READ ONLY` and bounded 8–11 second statements. No RDS/S3 writes or AWS deploy.
+- Sampled 60 historical notice versions in three ordered date windows (2026-09-11–14, 09-30, 10-10); 59 selected source documents, 27 with unverified task-like windows.
+- Combined those with the earlier 56-version current snapshot pilot (22 task-like windows) to build **116 versions / 115 distinct notice IDs** over September and October. The combined offline review queue has **49 source-block candidates** and **67 without eligible candidate windows in the one-document selection**. Failure to find windows is not proof that the notice lacks task details.
+- Queried a bounded set of `notice_relations` / `bid_notice_versions`: 41 CONFIRMED relation rows and 10 sampled notices with more than one version. Some relations lead outside the sample. The resulting corpus declares `family_linkage_status=UNVERIFIED`; no model evaluation can pass the PR A gate.
+- Generated a **private** frozen `corpus_unverified.json`, `task_review_queue.jsonl`, local `source_blocks/{document_id}.blocks.json` files and `manifest.json`. All records retain notice ID/version and RDS source document ID, original-file SHA field, extracted-text SHA field, local selected-block file SHA, block refs and excerpt SHA.
+- Verified the local excerpt export SHA and source block indices. The **original RDS/S3 attachment bytes were not redownloaded and independently rehashed**. RDS SHA fields are provenance metadata, not independently proven PDF/HWP digests.
+- No candidate automatically becomes `VERIFIED_TASK`; no GPT Teacher/human judgment is invented. Source-verification review is a separate step from company–notice relevance labeling. Existing PR #73's 100 title-only labels/weights are preserved as-is and not treated as FULL_TASK.
+- WebGPT CPU-only BM25 and multilingual-E5-small were already run in predecessor PR #77. The older two-synthetic-company title-only nDCG results are an exploratory signal, **not proof** for these new business-task inputs.
+
+## Strict next-stage blockers
+
+1. **Review** source windows for actual project scope and reject tables of contents, contract/eligibility boilerplate and missing text. Where the first preferred attachment contains no task, inspect alternate version-bound source attachments. Repeat excerpt/SHA checks after selection.
+2. **Close** relations across sample boundaries, including confirmed reannouncements, historical versions and suggested/unresolved links, and separately check train/validation/test family membership.
+3. Keep strict chronological non-overlapping train/validation/test and distinct company profiles. The actual date distribution and verified project diversity determine feasible holdout sizes; never reshuffle posting dates to satisfy the gate.
+4. Prepare *blind* GPT Teacher/human review tasks from independently retrieved BM25 Top 100 and E5 Top 100 union after source approval. As of this PR, labels are **not purchased/created**. Due to the reported roughly $0.26 OpenAI API balance, **no additional external paid GPT API calls** without new approval.
+5. The initial 300–500 review *pairs* are only a development pilot; final heldout test must **separately** meet PR #75's 10 companies x 30 judged pairs, with relevant/irrelevant examples per company, temporal and family split, no training leakage. A synthetic-company test cannot establish real-company generalization.
+6. Once all PR A gates pass, the `validated_eval.py` CLI computes judged-pool nDCG@10, pooled judged Recall@50, and observed top10 judgment coverage for independently searched BM25, E5 and RRF. It **refuses** to report scores before validation. This is not full-corpus recall; do not count unjudged documents as irrelevant.
+7. BGE-M3/Qwen3/Reranker and operating inference integration are **deferred**. No production Champion promotion or PR merge without explicit user approval.
+
+## Offline reproduction (uses private files, no network)
+
+```powershell
+$env:PYTHONPATH=(Resolve-Path engine).Path+';'+(Resolve-Path apps/api).Path
+py -m app.ml_recommendations.task_review_queue `
+ --snapshot ..\ml-synthetic-20261013\snapshot.json `
+ --draft ..\ml-relevance-audit-private-20261013\tasks\draft.json `
+ --draft ..\ml-relevance-audit-private-20261013\historical_task_draft.json `
+ --relations ..\ml-relevance-audit-private-20261013\lineage_sample.json `
+ --industry-master data/master/industry_codes.csv `
+ --out ..\ml-relevance-audit-private-20261013\prc_corpus_v2
+
+py -c "from pathlib import Path; from app.ml_recommendations.source_audit import verify_frozen_review_queue; print(verify_frozen_review_queue(Path('..')/'ml-relevance-audit-private-20261013'/'prc_corpus_v2'))"
+
+py -m pytest apps/api/tests/test_ml_task_review_queue.py -q
+```
+
+**Private extracted notice content and synthetic profiles are outside Git.** This PR only contains the exporters, audit/validation logic, reproducible test fixtures and this report.
+
+PR dependency order: **#75 -> #77 -> PR C** (C targets #77's head branch). Each remains Draft/unmerged pending approval.
+## 2026-10-13 GPT-6 pilot: independently authored excerpt labels (NOT GOLDEN)
+
+The GPT-6 assistant inspected selected AWS-extracted source blocks without seeing model rankings. Local frozen data (outside Git) contains **15 reviewed task excerpts** (13 direct, 2 scope inferred from proposal/rubric requirements), **6 synthetic company profiles** and **90 model-authored relevance judgments**: grade 0:79, grade 1:6, grade 2:5, grade 3:0. The remaining 34 excerpt candidates are not reviewed, and no score means legal eligibility. The labels are explicitly identified as gpt_teacher / REVIEWED_SOURCE_EXCERPT / human_approved=false. Rationale strings were assembled from a manually model-authored score matrix and source/profile fields; they are NOT 90 separate human-reviewed decisions.
+
+Private files: local directory ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1 containing task_review.jsonl, teacher_judgments.jsonl, manifest.json and bm25_e5_pilot.json. Original protected notice texts and labels NOT committed.
+
+### Small CPU retrieval pilot (15 reviewed excerpts only, 6 companies; 4 with relevant grade >= 2)
+
+BM25 nDCG@10 0.81013; pretrained E5-small 0.81517; BM25+E5 RRF 0.84671. E5 improves by only +0.00504 against BM25. E5 warmed corpus+query embedding 0.501s; excludes model load. This is an exploratory *small judged-candidate ranking*, not full 383-notice independent retrieval, not a time/family holdout, not a full-task independent benchmark and not full-corpus recall. Label distribution is heavily imbalanced, and models rank different candidate subsets. Do not equate any of these metrics to operational accuracy or compare directly with the prior title-only 0.9300 pilot.
+
+Local excerpt SHA/selected block refs are independently checked by the offline tool, but original AWS S3 bytes were not all rehashed. External API cost: $0; only locally cached E5-small and offline BM25 used. No model deployment, PR merge or API expenditure.
+
+### Offline replay
+
+Set PYTHONPATH to the engine and apps/api source roots and HF_HOME to existing local private HF cache, then run:
+python -m app.ml_recommendations.excerpt_teacher_pilot --annotations ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1 --source-root ..\ml-relevance-audit-private-20261013\prc_corpus_v1 --profiles ..\ml-synthetic-20261013\snapshot.json --output ..\ml-relevance-audit-private-20261013\gpt6_reviewed_excerpt_pilot_v1\bm25_e5_recheck.json
+
+### Remaining blockers
+
+Review 34 more excerpts, inspect alternate attachments, close external notice relation edges, verify full task scope including original-source integrity, and build independently judged positive/hard-negative company pairs with a real temporal/company holdout (at least 10 test firms x 30 independently reviewed pairs). Only then perform independent full valid-universe BM25 Top100/E5 Top100 retrieval and judge reranking. Do not promote this pilot to PR A full-task accuracy.
+## 2026-10-13 follow-up: successful targeted label persistence
+
+The previously blocked large-script label-writing step was replaced with an explicit private input file and a small, testable schema validator. No existing label or model output was overwritten.
+
+Saved privately outside Git: targeted_dev_seed.tsv, gpt6_reviewed_excerpt_pilot_v2/targeted_dev_pairs.jsonl, and targeted_dev_manifest.json. The input and output SHA256 hashes are recorded. Original 90-pair labels were preserved and duplicate company-version pair insertion is prohibited.
+
+NEW: 26 GPT-6 model-authored targeted development labels. Distribution: grade 0:6, grade 1:9, grade 2:11, grade 3:0. CUMULATIVE 116: grade 0:85, grade 1:15, grade 2:16, grade 3:0. The new 11 positives cover only 6 distinct notice versions and 9 synthetic firm profiles. The new grade-1 adjacent-domain examples are hard-negative *candidates* for model tuning, not independently measured generalization. Synthetic IT firms and some Wando marine-waste notices are near duplicates; do not count these as fully independent families.
+
+All new labels: label_source=gpt_teacher, annotation_basis=REVIEWED_SOURCE_EXCERPT, human_approved=false, split=targeted_development. The reviewed block excerpt is not a verified COMPLETE project scope. No Grade 3 was assigned because task-level proof is insufficient. These labels must NEVER be counted as untouched test judgments.
+
+Previous 15 reviewed candidate snippets: 13 DIRECT, 2 INDIRECT. Additional 34 reviewed snippets: 8 DIRECT, 6 INDIRECT, 20 INSUFFICIENT_SOURCE. Total: 21 direct, 8 indirect, 20 insufficient. SHA256 for the additional 34 review file and every cited cached selected-block file, indices and excerpt text were checked offline successfully.
+
+### Alternate AWS attachment inventory
+
+A bounded read-only RDS metadata query reviewed all 20 snippet-insufficient notice versions: 80 document rows, all 20 versions had two or more attachments. Some had alternate proposal/specification/project-specific description documents. Stored the metadata privately at alternate_attachment_metadata_20.json. A follow-up query for contents of eight selected documents was blocked by the execution safety check; therefore no alternate document block was promoted or fully reviewed.
+
+### Verification and outstanding gates
+
+The targeted_development_labels.py validator rejects duplicates and old-pair reuse, invalid original excerpt digests, unexpected human approval, and final-holdout claims. Related local suite: 47 passed (5 new). No paid API calls, AWS writes, production model deployment, PR merge or large-model evaluation.
+
+Next: source-block review of alternate attachments using an authorized read-only approach; close change/reannouncement families; then obtain independent task-verified labels and untouched temporal/company holdouts before ranking accuracy comparison.
+## Additional AWS alternate-attachment verification, 2026-10-13
+
+New work beyond the existing 49 excerpts and 116 original developmental labels:
+
+A bounded read-only AWS RDS audit examined attachment metadata for 20 previously inconclusive versions (80 attachment rows), followed by limited read-only RDS extraction from alternate documents for eight versions, two documents per batch. The recovered source previews contain identifiable project scope: AI-assisted K-pop song-camp training and audio/video deliverables; 3D/PLC laboratory modeling; research data platform/CMS and GPT app enhancements; pipe relocation and civil works; 100/200GbE optical cable procurement; AI short-video competition; school seismic assessment; and robotic cafe equipment supply.
+
+Local private files: alternate_targets_8.json; alternate_small_0.json, alternate_small_2.json, alternate_small_4.json, alternate_small_6.json; alternate_review_v1/alternate_review_candidates.jsonl and manifest.json. Exactly eight source version/document identities and excerpt preview SHAs were verified using the source cache. The preview is limited to 550 characters per selected block. Original S3 bytes and complete extracted blocks were NOT independently rehashed, and the reviewed excerpts are NOT FULL_TASK or human-approved.
+
+20 new distinct GPT-6 authored targeted-development firm-task judgments are preserved privately at alternate_preview_dev_v1/alternate_preview_dev_labels.jsonl. Distribution: grade 0 = 1, grade 1 = 14, grade 2 = 5, grade 3 = 0. The five positive grades cover four distinct notice versions, so evidence is still sparse. Total exploratory dev labels: 136 = original 90 + 26 prior targeted + 20 new preview-only; grades 0:86, 1:29, 2:21, 3:0. This is POSITIVE-ENRICHED, unapproved and deliberately NOT a full-universe accuracy evaluation.
+
+Among the eight recovered notice versions, 3 are involved in previously observed confirmed notice_relations edges; several links leave the sampled universe. Family closure is unproven. No valid chronological/company/family holdout exists, and BM25/E5/Hybrid full-task accuracy is not measured.
+
+Five new offline source validation/regression tests added; total relevant local tests: 52 passed. No paid OpenAI API usage, no AWS writes, no production inference change, and no PR merges. The other 12 inconclusive versions await alternative-source content examination and review.
+## 2026-10-13: remaining 12 alternate attachments — source-block validation
+
+This is additional to the first eight alternates, not a recount of the original 49 candidate reviews. All 20 previously inconclusive notice versions now have an alternate selected document inspected at source-block level, but some sources still lack detailed work scope.
+
+### Bounded AWS READ ONLY results
+
+- Queried exactly 12 additional version-bound documents in batches of two via existing AWS read-only EC2 SSM -> RDS pathway, with read-only SQL and 8-second statement timeout.
+- First-stage previews were capped at 700 characters per source block. Re-fetched the **complete untruncated text of all SELECTED evidence blocks** (12,514 characters total) in bounded pairs, and verified selected original block text prefixes against their earlier preview, indices, version IDs and original/extracted hash metadata.
+- Local private evidence: alternate_targets_remaining_12.json; alternate_remaining_0/2/4/6/8/10.json; alternate_review_remaining_v1; alternate_remaining_full_0/2/4/6/8/10.json; alternate_remaining_full_manifest.json. Previous first-eight reviews still verify (8/8), the new 12 verify (12/12).
+- Original complete PDF/HWP/S3 bytes were NOT independently rehashed. Unselected blocks, missing ZIP/XLSX specifications and full source-document completeness were NOT verified.
+
+### 12 examined version scopes
+
+**6 preliminary direct project/product excerpts:** ferro-titanium chemistry specifications, school uniforms supply quantities, second version of Gangbuk civil construction, two Non-GMO soybean purchase tender notices, and integrated ONIX/Miniscope/HARP neuroscience instrumentation.
+
+**5 partial scope only:** 7kW EV charger procurement, soybean purity/testing supply conditions, 30 scientific reagent products without the detailed spreadsheet, pathogen diagnostic sera without a supplied ZIP specification, and playground fire-protection construction without item schedule.
+
+**1 insufficient source:** real-estate transaction information-system auditing/supervision notice points to a separate, unavailable detailed proposal.
+
+All statuses are MODEL-REVIEWED EXCERPT ONLY, never HUMAN_REVIEWED or full business-task Golden. The 20 version count includes previously inspected versions: no new golden/full-task evaluation cases claimed.
+
+### Exact evidence leakage risks
+
+The 20 audited notice versions map to **19 distinct notice IDs**, since indexes **28 and 32** are two versions of the SAME notice. Distinct indexes **37 and 38** have identical RDS extracted-text SHA256 even though their attachment file hashes differ: do not place them across data splits. A bounded notice_relations walk for 19 seeds followed **7 CONFIRMED relation edges to 26 visited notice IDs**, including **5 notices with external-sample relation neighbors**. This is a partial graph walk and does NOT prove closure of unrecorded relationships or similarity groups. FAMILY_CLOSURE_UNVERIFIED remains enforced.
+
+### Code, tests and limits
+
+- Refactored fixed-eight alternate source review to bounded 1..25 sources with explicit sample files, per-version scope status and backward-compatible eight-source replay.
+- Verified selected full RDS blocks against cached previews and their original version/hash metadata; reject missing, duplicate, modified or cross-version evidence.
+- Block new positive labeling from excerpts explicitly classified as PARTIAL_TASK_EXCERPT or INSUFFICIENT_SOURCE; never implicitly grant human approval or independent-test split.
+- Added regression for 12-source configuration, previous 8-source results, complete-block drift and same-notice vs identical-extracted-text collision.
+- **57 related ML tests passed**. GPT-6 development-only labels remain **136**, with **21 grade >=2**. No additional grades created by source review; zero new paid API calls, AWS writes, operating model changes or merges. No independent full-task BM25/E5/Hybrid accuracy calculated.
+- Private family and provenance reports: alternate_family_overlap_audit.json, alternate_notice_lineage_20.json, alternate_remaining_full_manifest.json.
+
+Next gate: gather truly distinct task families and profiles, independently reviewed test judgments, time/family/company splits, and assess full-universe independent retrieval. Unsupported ZIP/XLSX task specifics remain a data-quality issue.
+## 2026-10-13: Full frozen LOCAL candidate retrieval diagnostic (new result)
+
+This is an exploratory CPU retrieval test, NOT final accuracy validation or a reason to switch the production model.
+
+Local candidate universe: 383 current snapshot versions + 60 historically sampled versions, exact notice_version_id deduplication = **442 notices**. All three retrievers independently rank the same 442 candidate versions. Only **40** have actual task-source excerpts appended (27 direct extracts, 8 alternate preview snippets, 5 partial extracts); 402 are title-only.
+
+There are 29 synthetic firms with a nonempty capability query. Only 14 have known positive GPT-6 development labels: **21 positive company/version pairs across 13 unique positive notice versions**. These labels were deliberately selected and are not human-approved, randomized, time-heldout or complete judgments.
+
+Count of those 21 KNOWN development-positive pairs appearing within each searcher's top N:
+
+- Title-only control: BM25 top10=8, top50=8, top100=10; E5-small top10=3, top50=13, top100=16; RRF top10=3, top50=15, top100=16.
+- Same 442 versions including 40 business-task excerpts: BM25 top10=8, top50=15, top100=17; E5-small top10=10, top50=15, top100=16; HYBRID RRF top10=11, top50=16, top100=19.
+
+Source-bound business-task text increased KNOWN-positive candidate discovery, especially hybrid top10 from 3 to 11 and hybrid top100 from 16 to 19. However, the attachment enriched mostly already-labeled cases, so this gain is selection-biased. Unjudged records were never counted as negative. This is NOT nDCG, true full-corpus recall, unbiased evaluation, verified Champion approval, or the full AWS open-notice universe. It should not be compared with the earlier 15-document tiny nDCG experiment.
+
+CPU with cached loaded intfloat/multilingual-e5-small: source-backed BM25 29 queries 0.035 sec; E5 document+query inference 2.762 sec; E5 per-query p50 9.71 ms, excluding cold load.
+
+Reproducible offline script: apps/api/app/ml_recommendations/known_positive_diagnostic.py. The complete private result including query coverage and explicit NOT_MEASURED flags is stored OUTSIDE Git at ml-relevance-audit-private-20261013/positive_retrieval_diagnostic_v1.json. Input corpus digest SHA256: c57049e4b6f484133263c2fc79e5f5933074ac261335bd6acaf32ebd8937086a. Related regression suite 62 tests passed.
+
+October 15 2026 is the FINAL presentation and END of development. No evaluation or implementation after it is assumed. Keep production lexical fallback and existing API behavior unchanged. This result is a useful offline source-backed recommendation demonstration but does not justify immediately promoting E5 or hybrid into production.

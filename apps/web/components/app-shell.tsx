@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { AppUserProvider } from '@/components/app-user-context';
 import { CopilotProvider } from '@/components/copilot/provider';
 import { CopilotPanel } from '@/components/copilot/panel';
+import { MembershipModal } from '@/components/membership-modal';
 
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
@@ -16,6 +17,7 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 import { replaceWith } from '@/lib/navigation';
+import { forgetCase } from '@/lib/last-case';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -24,14 +26,6 @@ type PageInfo = TitleBandProps & {
 const LEGACY_ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
-  {
-    match: (pathname) => pathname === '/guide',
-    page: {
-      title: '이용안내',
-      description: '공고를 찾아 참가 자격을 확인하고, 공고가 바뀌면 다시 검증합니다.',
-      breadcrumb: '홈 › 이용안내',
-    },
-  },
   {
     match: (pathname) => pathname.startsWith('/notices'),
     page: {
@@ -121,11 +115,21 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
+    match: (pathname) => pathname.startsWith('/prep-guide'),
+    page: {
+      title: '입찰 준비 지침서',
+      description: '판정을 마친 공고에 대해 준비할 것과 순서를 정리합니다.',
+      breadcrumb: '홈 › 준비 지침서',
+      showTitleBand: false,
+    },
+  },
+  {
     match: (pathname) => pathname.startsWith('/recommendations'),
     page: {
       title: 'AI 추천',
-      description: '모델의 연관성 추천과 기존 자격판정 결과를 구분해 확인합니다.',
-      breadcrumb: '홈 › 공고 추천',
+      description: '우리 회사에 어울리는 입찰 공고를 찾고, 관심 있는 공고의 참가자격을 확인합니다.',
+      breadcrumb: '홈 › AI 추천',
+      showTitleBand: false,
     },
   },
   {
@@ -151,9 +155,11 @@ function pageInfoFor(pathname: string): PageInfo {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const page = pageInfoFor(pathname);
-  const isProtectedPage = pathname !== '/login';
+  // 로그인·회원가입 화면만 로그인 없이 연다.
+  const isPublicPage = pathname === '/login' || pathname === '/signup';
+  const isProtectedPage = !isPublicPage;
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
+  const [checkingAuth, setCheckingAuth] = useState(!isPublicPage);
   const [authFailure, setAuthFailure] = useState<string | null>(null);
   const [logoutFailure, setLogoutFailure] = useState<string | null>(null);
   const [authAttempt, setAuthAttempt] = useState(0);
@@ -185,6 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!active) return;
           if (cause instanceof ApiError && cause.status === 401) {
             window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+            forgetCase();
             setUser(null);
             replaceWith('/login');
             return;
@@ -209,7 +216,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [authAttempt, isProtectedPage]);
 
-  if (pathname === '/login') return children;
+  if (isPublicPage) return children;
 
   if (checkingAuth) {
     return (
@@ -246,11 +253,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await logout();
       window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+      forgetCase();
       setUser(null);
       replaceWith('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
         window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
+        forgetCase();
         setUser(null);
         replaceWith('/login');
         return;
@@ -269,7 +278,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <AppUserProvider user={user}>
-      <CopilotProvider>
+      <CopilotProvider userId={user?.id ?? 'anonymous'}>
       <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
         <AppHeader pathname={pathname} user={user} onLogout={() => void handleLogout()} />
         {logoutFailure && (
@@ -288,6 +297,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div id="main-content" tabIndex={-1} className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
         <AppFooter />
         <CopilotPanel />
+        <MembershipModal />
       </div>
       </CopilotProvider>
     </AppUserProvider>

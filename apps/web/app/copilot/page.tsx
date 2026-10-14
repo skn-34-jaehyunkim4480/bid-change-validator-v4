@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { CopilotMascot } from '@/components/copilot/mascot';
-import { PanelBody, useScrollbarWhileScrolling } from '@/components/copilot/panel';
+import { PanelBody, useCaseExpired, useScrollbarWhileScrolling } from '@/components/copilot/panel';
 import { useCopilot } from '@/components/copilot/provider';
 import { NavigationLink } from '@/components/navigation-link';
 import { buttonVariants } from '@/components/ui/button';
@@ -54,8 +54,8 @@ export default function CopilotPage() {
     return (
       <li key={item.id}>
         <button type="button" className="copilot-page-item" aria-current={item.id === activeId ? 'page' : undefined}
-          onClick={() => open(item.id)}>
-          <strong>{item.notice_title || item.title}</strong>
+          data-expired={item.expired ? '' : undefined} onClick={() => open(item.id)}>
+          <strong>{item.expired && <span className="copilot-expired mr-1.5">만료됨</span>}{item.notice_title || item.title}</strong>
           <span>{last ? `${last.question}` : `${item.bid_notice_no} · 대화 없음`}</span>
         </button>
       </li>
@@ -113,9 +113,11 @@ export default function CopilotPage() {
 
 function ChatActions({ caseId, general }: { caseId: string; general: boolean }) {
   const { store, state } = useCopilot(caseId);
+  const expired = useCaseExpired(caseId);
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2">
-      {state.turns.length > 0 && <button type="button" className="copilot-new-conversation" disabled={state.busy} onClick={() => store.newConversation(caseId)}>새 대화</button>}
+      {expired && <span className="copilot-expired">만료됨</span>}
+      {state.turns.length > 0 && <button type="button" className="copilot-new-conversation" disabled={state.busy} onClick={() => store.newConversation(caseId)}>{expired ? '대화 삭제' : '새 대화'}</button>}
       {!general && <NavigationLink href={`/qualification?caseId=${encodeURIComponent(caseId)}`} className="text-[13px] font-semibold text-[var(--product-accent)] underline-offset-2 hover:underline">참가자격 화면</NavigationLink>}
     </div>
   );

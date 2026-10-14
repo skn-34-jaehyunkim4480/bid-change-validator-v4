@@ -146,7 +146,7 @@ def _current_analysis_runs(
     return {run.notice_version_id: run for run in valid}, history
 
 
-def candidates(db: Session, *, now: datetime | None = None) -> list[dict]:
+def candidates(db: Session, *, now: datetime | None = None, notice_ids: set[str] | None = None) -> list[dict]:
     """Scan *all* currently valid notices, never just the last 150.
 
     Scan in bounded DB batches and never perform any analysis/DB writes.
@@ -181,6 +181,15 @@ def candidates(db: Session, *, now: datetime | None = None) -> list[dict]:
         .order_by(n.last_seen_at.desc(), n.id)
         .execution_options(yield_per=CANDIDATE_BATCH_SIZE)
     )
+    # The production /ml scan remains unrestricted by default. The opt-in
+    # experiment enriches ONLY its already-ranked top 100 notices.
+    if notice_ids is not None:
+        if not notice_ids:
+            return []
+        if len(notice_ids) > 100:
+            raise ValueError("Experimental enrichment capped at 100 notices")
+        stmt = stmt.where(n.id.in_([UUID(ident) for ident in notice_ids]))
+
     output: list[dict] = []
     batch: list[tuple] = []
 
@@ -305,4 +314,212 @@ def recommend_ml(
         fallback_used=source == "lexical_fallback",
         input_sha256=hashlib.sha256(query.encode("utf-8")).hexdigest(),
         total_valid_candidates=len(rows), items=primary, needs_review_items=needs_review,
+    )
+
+def experimental_live_candidate_map(db: Session, *, now: datetime | None = None) -> dict[str,dict]:
+    """Read only the columns required for LIVE candidate-version discovery.
+
+    Mirrors candidates() validity window, cancellation checks and current
+    version policy. Do not hydrate analysis runs for all 3,000+ notices.
+    """
+    from types import SimpleNamespace
+
+    now = now or datetime.now(timezone.utc)
+    n, v = BidNotice, BidNoticeVersion
+    stmt = (
+        select(n.id, n.title, n.notice_kind,
+               v.id, v.version_number, v.notice_kind, v.posted_at, v.bid_closed_at)
+        .join(v, v.notice_id == n.id)
+        .where(
+            v.is_current.is_(True),
+            or_(
+                v.bid_closed_at > now,
+                and_(
+                    v.bid_closed_at.is_(None),
+                    v.posted_at.is_not(None),
+                    v.posted_at <= now,
+                    v.posted_at > now - timedelta(days=UNKNOWN_DEADLINE_DAYS),
+                ),
+            ),
+            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%취소%"),
+            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%cancel%"),
+            ~func.lower(func.coalesce(v.notice_kind, n.notice_kind, "")).like("%무효%"),
+        )
+        .execution_options(yield_per=CANDIDATE_BATCH_SIZE)
+    )
+    found = {}
+    for (nid, title, notice_kind, vid, version_number,
+         version_kind, posted, closed) in db.execute(stmt):
+        if not _not_cancelled(notice_kind):
+            continue
+        window = eligible_window(
+            SimpleNamespace(notice_kind=version_kind, posted_at=posted,
+                            bid_closed_at=closed),
+            now=now,
+        )
+        if not window:
+            continue
+        found[str(vid)] = {
+            "notice_id": str(nid), "title": title,
+            "version_number": version_number,
+            "deadline_source": window[0], "effective_deadline": window[1],
+        }
+    return found
+
+
+# Experimental, opt-in CPU retrieval. Production /ml handler remains unchanged.
+class ExperimentalRecommendationRequest(MLRecommendationRequest):
+    mode: Literal["bm25", "e5_small", "hybrid_rrf"] = "hybrid_rrf"
+    query_strategy: Literal["legacy", "industry_v1"] = "legacy"
+
+
+class ExperimentalRecommendationResponse(BaseModel):
+    experiment: Literal["offline_task_corpus_v1"] = "offline_task_corpus_v1"
+    query_strategy_used: Literal["legacy", "industry_v1"] = "legacy"
+    mode_requested: str
+    mode_used: str
+    fallback_used: bool
+    fallback_reason: str | None = None
+    valid_live_candidates: int
+    indexed_live_candidates: int
+    live_title_fallback_candidates: int
+    stale_source_documents: int
+    retrieval_latency_ms: float
+    task_source_status: Literal["UNVERIFIED_NO_INDEPENDENT_ACCURACY"] = "UNVERIFIED_NO_INDEPENDENT_ACCURACY"
+    note: str = "Relevance score is not a probability or eligibility determination; offline corpus is not a live index."
+    items: list[MLNoticeRecommendation]
+    needs_review_items: list[MLNoticeRecommendation] = Field(default_factory=list)
+
+
+def _valid_experimental_version_map(db: Session, valid: list[dict]) -> dict[str, dict]:
+    """Resolve current notice versions without changing the production /ml contract."""
+    by_notice = {row["notice_id"]: row for row in valid}
+    mapping = {}
+    ids = list(by_notice)
+    for offset in range(0, len(ids), CANDIDATE_BATCH_SIZE):
+        batch = [UUID(value) for value in ids[offset:offset+CANDIDATE_BATCH_SIZE]]
+        for version_id, notice_id, version_number in db.execute(
+            select(BidNoticeVersion.id, BidNoticeVersion.notice_id,
+                   BidNoticeVersion.version_number).where(
+                BidNoticeVersion.is_current.is_(True),
+                BidNoticeVersion.notice_id.in_(batch),
+            )
+        ):
+            row = by_notice.get(str(notice_id))
+            if row and row["version_number"] == version_number:
+                mapping[str(version_id)] = row
+    return mapping
+
+
+@router.post("/ml-experimental", response_model=ExperimentalRecommendationResponse)
+def recommend_experimental(
+    request: ExperimentalRecommendationRequest,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> ExperimentalRecommendationResponse:
+    import os
+    from .experimental_runtime import read_artifacts, rank_artifacts
+
+    if os.getenv("ML_EXPERIMENTAL_ENABLED", "false").casefold() != "true":
+        raise HTTPException(status_code=503, detail="Experimental retrieval is disabled")
+    folder = os.getenv("ML_EXPERIMENTAL_ARTIFACT_DIR", "").strip()
+    if not folder:
+        raise HTTPException(status_code=503, detail="Experimental offline artifacts are not configured")
+
+    query = request.query
+    strategy_used = "legacy"
+    if request.company_id is not None:
+        authorize_company_access(user, request.company_id)
+        try:
+            company = _load_company(db, request.company_id)
+        except (LookupError, ValueError) as error:
+            raise HTTPException(status_code=404, detail="Company not found") from error
+        if query is None:
+            if request.query_strategy == "industry_v1":
+                from .experimental_query import industry_task_query
+                normalized = industry_task_query(company)
+                if normalized:
+                    query = normalized
+                    strategy_used = "industry_v1"
+                else:
+                    query = company_query(company)
+            else:
+                query = company_query(company)
+    if not query or not query.strip():
+        raise HTTPException(status_code=422, detail="Query or company profile required")
+
+    artifact_failed = False
+    try:
+        corpus, vectors = read_artifacts(folder)
+    except (OSError, ValueError, KeyError, TypeError):
+        # Experimental artifacts may be absent/corrupt; preserve live title search.
+        artifact_failed = True
+        corpus, vectors = [], {"docs": [], "queries": []}
+
+    valid_map = experimental_live_candidate_map(db)
+    # An earlier offline extraction may have been replaced within the same version.
+    # Never serve cached E5 vectors unless source digest and notice title still match.
+    inspected = [r for r in corpus if r["notice_version_id"] in valid_map
+                 and r.get("selected_document")]
+    expected_ids = [UUID(r["selected_document"]["document_id"]) for r in inspected]
+    current_docs = {}
+    if expected_ids:
+        current_docs = {str(did): (str(vid), text_sha) for did, vid, text_sha in
+                        db.execute(select(NoticeDocument.id,
+                                          NoticeDocument.notice_version_id,
+                                          NoticeDocument.extracted_text_sha256)
+                                   .where(NoticeDocument.id.in_(expected_ids))).all()}
+    fresh = []
+    stale = 0
+    for record in corpus:
+        vid = record["notice_version_id"]
+        if vid not in valid_map:
+            continue
+        if record["title"] != valid_map[vid]["title"]:
+            stale += 1
+            continue
+        doc = record.get("selected_document")
+        if doc:
+            evidence = current_docs.get(doc["document_id"])
+            if not evidence or evidence != (vid, doc.get("extracted_sha256_metadata")):
+                stale += 1
+                continue
+        fresh.append(record)
+    result = rank_artifacts(fresh, vectors, valid_versions=set(valid_map), query=query,
+                            mode=request.mode,
+                            live_titles={key: row["title"] for key, row in valid_map.items()},
+                            top=100)
+    if artifact_failed:
+        result["fallback_used"] = True
+        result["fallback_reason"] = "OFFLINE_ARTIFACT_UNAVAILABLE"
+    # Resolve expensive analysis/qualification metadata ONLY for retrieved
+    # candidates, never the entire 3k+ valid-notice universe.
+    shortlisted_notices = {
+        valid_map[r["notice_version_id"]]["notice_id"]
+        for r in result["rankings"]
+    }
+    enriched = {
+        row["notice_id"]: row
+        for row in candidates(db, notice_ids=shortlisted_notices)
+    }
+    ranked = []
+    for r in result["rankings"]:
+        meta = valid_map[r["notice_version_id"]]
+        row = enriched.get(meta["notice_id"])
+        # Reject notices that changed version/title between slim and rich reads.
+        if not row or row["version_number"] != meta["version_number"] or row["title"] != meta["title"]:
+            continue
+        item = row.copy()
+        item["score"] = r["score"]
+        ranked.append(item)
+    eligible, review = partition_ranked(db, request.company_id, ranked,
+                                       request.limit, result["mode_used"], query)
+    return ExperimentalRecommendationResponse(
+        query_strategy_used=strategy_used,
+        mode_requested=request.mode, mode_used=result["mode_used"],
+        fallback_used=result["fallback_used"], fallback_reason=result["fallback_reason"],
+        valid_live_candidates=len(valid_map), indexed_live_candidates=result["valid_indexed_count"],
+        live_title_fallback_candidates=result["live_title_fallback_count"],
+        stale_source_documents=stale,
+        retrieval_latency_ms=result["latency_ms"], items=eligible, needs_review_items=review,
     )

@@ -261,3 +261,92 @@ def test_development_self_service_runs_once_and_reuses_same_input(state, monkeyp
     finally:
         app.dependency_overrides.pop(analysis_router.get_optional_current_user, None)
 
+
+
+
+def test_j13_unsupported_xlsx_allows_request_and_analysis(state, monkeypatch):
+    """Regressed on R26BK01766092: PDF/HWP extracted, one XLSX unsupported."""
+    from bidengine.pipeline.analysis_result import AnalysisCoverage, RequirementAnalysisResult
+    from apps.api.app.qualification.analysis import _persist_result
+
+    db, notice, version, actor, client, admin, ordinary = state
+    actor["user"] = ordinary
+    app.dependency_overrides[analysis_router.get_optional_current_user] = lambda: ordinary
+    for order, (name, status) in enumerate([
+        ("표준공고문.hwp", "EXTRACTED"),
+        ("울산삼일고등학교 공고문.pdf", "EXTRACTED"),
+        ("울산삼일고등학교 중간처리 내역서.xlsx", "UNSUPPORTED"),
+    ]):
+        extracted = status == "EXTRACTED"
+        db.add(NoticeDocument(
+            notice_version_id=version.id, document_order=order, name=name,
+            url=f"https://example.invalid/{order}", source_field=f"doc{order}",
+            download_status="DOWNLOADED", extraction_status=status,
+            file_sha256="c" * 64 if extracted else None,
+            extracted_text_sha256="d" * 64 if extracted else None,
+            extracted_blocks=[{"block_index": 0, "text": "participation required"}] if extracted else None,
+            extraction_error="document format is not supported" if not extracted else None,
+        ))
+    db.flush()
+    # Explicit review must not queue a futile extraction retry for XLSX.
+    base = f"/api/v1/notices/{notice.id}/versions/1/qualification-analysis"
+    response = client.post(base + "/request")
+    assert response.status_code == 202, response.text
+    assert response.json()["documents_ready"] is True
+    assert db.scalar(select(NoticeProcessingJob).where(NoticeProcessingJob.stage == "EXTRACT")) is None
+
+    monkeypatch.setattr(analysis_router, "get_settings", lambda: Settings(
+        qualification_self_service_enabled=True, qualification_self_service_daily_limit=2,
+    ))
+    class AvailableExtractor:
+        available = True
+
+    monkeypatch.setattr(analysis_router, "OpenAIStructuredExtractor", AvailableExtractor)
+    def fake_analysis(session, **kwargs):
+        payload = RequirementAnalysisResult(
+            notice_id=str(notice.id), notice_version_id=str(version.id),
+            status="SUCCEEDED", coverage=AnalysisCoverage(section_selection="anchored"),
+        )
+        return _persist_result(
+            session, version=version, result=payload,
+            input_fingerprint=qualification_analysis_version_fingerprint(version), commit=False,
+        )
+
+    monkeypatch.setattr(analysis_router, "run_qualification_analysis", fake_analysis)
+    try:
+        analyzed = client.post(base)
+        assert analyzed.status_code == 201, analyzed.text
+        payload = analyzed.json()
+        assert payload["coverage"]["verdict_complete"] is False
+        assert payload["verdict_complete"] is False
+        exclusion = next(x for x in payload["diagnostics"]
+                         if x["code"] == "UNSUPPORTED_ATTACHMENT_EXCLUDED")
+        assert exclusion["details"]["file_names"] == ["울산삼일고등학교 중간처리 내역서.xlsx"]
+        assert any(g["reason"] == "UNSUPPORTED_ATTACHMENT_EXCLUDED" for g in payload["coverage"]["gaps"])
+        assert client.post(base).json()["id"] == payload["id"]
+        actor["user"] = admin
+        approved = client.post(f"/api/v1/admin/processing-jobs/versions/{version.id}/approve-analysis")
+        assert approved.status_code == 200, approved.text
+    finally:
+        app.dependency_overrides.pop(analysis_router.get_optional_current_user, None)
+
+
+def test_only_unsupported_xlsx_remains_not_ready(state, monkeypatch):
+    db, notice, version, actor, client, admin, ordinary = state
+    actor["user"] = ordinary
+    db.add(NoticeDocument(
+        notice_version_id=version.id, document_order=0, name="cost.xlsx",
+        url="https://example.invalid/cost.xlsx", source_field="doc0",
+        download_status="DOWNLOADED", extraction_status="UNSUPPORTED",
+    ))
+    db.flush()
+    app.dependency_overrides[analysis_router.get_optional_current_user] = lambda: ordinary
+    monkeypatch.setattr(analysis_router, "get_settings", lambda: Settings(
+        qualification_self_service_enabled=True,
+    ))
+    try:
+        r = client.post(f"/api/v1/notices/{notice.id}/versions/1/qualification-analysis")
+        assert r.status_code == 409 and r.json()["error"]["code"] == "DOCUMENTS_NOT_READY"
+        assert db.scalar(select(NoticeProcessingJob).where(NoticeProcessingJob.stage == "ANALYZE")) is None
+    finally:
+        app.dependency_overrides.pop(analysis_router.get_optional_current_user, None)

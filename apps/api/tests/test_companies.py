@@ -192,3 +192,87 @@ def test_health_check_uses_database() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_account_without_a_company_creates_its_own_profile_once() -> None:
+    """회사가 없는 계정은 자기 회사 프로필을 한 번 만들고 그 회사의 관리자가 된다(2026-10-13)."""
+    from apps.api.app.auth import get_optional_current_user, hash_password
+    from apps.api.app.auth_models import AppUser
+    from apps.api.app.database import SessionLocal
+    from apps.api.app.models import Company
+
+    payload = {
+        "name": "직접 만든 회사", "business_registration_number": _business_number(), "region_code": "11",
+        "region_name": "서울특별시", "company_size": "SMALL", "industry_codes": ["0001"],
+        "staff": {"total_count": 3, "verified": False, "roles": []},
+    }
+    db = SessionLocal()
+    user = AppUser(username=f"founder-{uuid4().hex[:10]}", password_hash=hash_password("demo-pass-1234"), role="USER", active=True)
+    db.add(user)
+    db.commit()
+    user_id = user.id
+    db.close()
+    company_id = None
+    try:
+        login = client.post("/api/v1/auth/login", json={"username": user.username, "password": "demo-pass-1234"})
+        assert login.status_code == 200, login.text
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.get("/api/v1/companies", headers=headers).json() == []
+
+        created = client.post("/api/v1/companies", json=payload, headers=headers)
+        assert created.status_code == 201, created.text
+        company_id = created.json()["id"]
+        me = client.get("/api/v1/auth/me", headers=headers).json()
+        assert me["company_id"] == company_id and me["role"] == "ADMIN"
+        assert [row["id"] for row in client.get("/api/v1/companies", headers=headers).json()] == [company_id]
+
+        # 이미 회사가 있는 계정은 회사를 더 만들 수 없다.
+        again = client.post("/api/v1/companies", json={**payload, "business_registration_number": _business_number()}, headers=headers)
+        assert again.status_code == 403 and again.json()["error"]["code"] == "COMPANY_CREATION_FORBIDDEN"
+    finally:
+        client.cookies.clear()
+        db = SessionLocal()
+        found = db.get(AppUser, user_id)
+        if found is not None:
+            db.delete(found)
+            db.commit()
+        if company_id is not None:
+            company = db.get(Company, company_id)
+            if company is not None:
+                db.delete(company)
+                db.commit()
+        db.close()
+
+
+def test_profile_reset_clears_records_but_keeps_the_required_values() -> None:
+    """프로필 초기화(2026-10-13): 실적·인증·인력·사업자번호를 비우고 회사명·업종·소재지·기업 구분은 남긴다."""
+    number = _business_number()
+    created = client.post("/api/v1/companies", json={
+        "name": "초기화 확인 회사", "business_registration_number": number, "region_code": "11", "region_name": "서울특별시",
+        "company_size": "SMALL", "industry_codes": ["0001"],
+        "staff": {"total_count": 5, "verified": True, "roles": [{"role_name": "PM", "headcount": 2, "verified": True}]},
+    })
+    assert created.status_code == 201, created.text
+    company_id = created.json()["id"]
+    try:
+        assert client.post(f"/api/v1/companies/{company_id}/certifications", json={"name": "ISO 27001"}).status_code == 201
+        assert client.post(f"/api/v1/companies/{company_id}/performances", json={
+            "name": "실적", "amount": 1000, "completed_at": "2025-01-31"}).status_code == 201
+
+        reset = client.post(f"/api/v1/companies/{company_id}/reset")
+        assert reset.status_code == 200, reset.text
+        body = reset.json()
+        assert body["performances"] == [] and body["certifications"] == [] and body["staff"] is None
+        assert body["business_registration_number"] is None
+        assert (body["name"], body["region_code"], body["company_size"]) == ("초기화 확인 회사", "11", "SMALL")
+        assert [item["code"] for item in body["industries"]] == ["0001"]
+        # 비운 번호는 다른 회사가 다시 쓸 수 있다.
+        reuse = client.post("/api/v1/companies", json={
+            "name": "번호를 이어받는 회사", "business_registration_number": number, "region_code": "11",
+            "company_size": "SMALL", "industry_codes": ["0001"], "staff": {"total_count": 1, "verified": False, "roles": []},
+        })
+        assert reuse.status_code == 201, reuse.text
+        client.delete(f"/api/v1/companies/{reuse.json()['id']}")
+        assert client.post(f"/api/v1/companies/{uuid4()}/reset").status_code == 404
+    finally:
+        client.delete(f"/api/v1/companies/{company_id}")

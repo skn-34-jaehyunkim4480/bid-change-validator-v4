@@ -11,6 +11,7 @@ from ..auth_models import AppUser
 from ..ask_back_schemas import QualificationAnswerRead
 from ..database import get_db
 from ..errors import ApiError
+from ..membership import consume_copilot_question, consume_general_question, ensure_case_not_expired
 from ..qualification.judgment import QualificationJudgmentError
 from ..revalidation_schemas import QualificationRevalidationRead
 from .actions import confirm_action
@@ -23,6 +24,7 @@ from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
 from .job_catalog import GuidedJobCatalog, catalog_for_case, ensure_question_available, get_question
 from .narration import apply_product_narration
+from .notice_links import answer_with_links
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
@@ -160,9 +162,18 @@ def general_chat_response(payload: GeneralChatRequest, semantic_processing: bool
 @router.post("/general-chat", response_model=CopilotChatResponse)
 def copilot_general_chat(
     payload: GeneralChatRequest,
+    db: Session = Depends(get_db),
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
-    _user: AppUser | None = Depends(get_optional_current_user),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CopilotChatResponse:
+    # 공고를 찾아 달라거나 AI 추천 공고를 판정해 달라는 요청은 모델 없이 답한다(횟수도 쓰지 않는다).
+    linked = answer_with_links(db, user, payload.message)
+    if linked is not None:
+        return CopilotChatResponse(answer=linked.answer, intent="UNKNOWN", notice_links=linked.links)
+    # 요금제 한도: 모델을 부르는 질문만 센다. 사용 전 안내를 확인하지 않은 요청은 모델을 부르지 않는다.
+    if semantic_processing:
+        consume_general_question(db, user)
+        db.commit()
     return general_chat_response(payload, semantic_processing)
 
 
@@ -174,11 +185,18 @@ def copilot_chat(
     user: AppUser | None = Depends(get_optional_current_user),
 ):
     case = authorize_case_access(db, user, payload.case_id)
+    ensure_case_not_expired(db, user, case)
     guided = get_question(payload.job_id, payload.question_id)
     if guided is not None:
         ensure_question_available(case, guided)
         payload = payload.model_copy(update={"message": guided.label})
-    if is_free_chat(payload, guided, semantic_processing):
+    free = is_free_chat(payload, guided, semantic_processing)
+    # 요금제 한도: AI 가 답하는 질문만 센다(입력창 질문과 추천 질문). 사용 전 안내를 확인하지 않은 요청은 모델을
+    # 부르지 않으므로 세지 않고, '근거 보기' 같은 단추와 답변 입력·실행 요청도 세지 않는다.
+    if semantic_processing and payload.user_input is None and (free or guided is not None):
+        consume_copilot_question(db, user, case.id)
+        db.commit()
+    if free:
         return free_chat_response(db, payload, case, semantic_processing)
     if payload.response_version == '3.1':
         from .orchestration import chat_v31

@@ -232,8 +232,8 @@ body {
   }
 
   .app-title-band {
-    height: 120px;
-    background: var(--product-accent-deep);
+    height: auto;
+    background: none;
     border-bottom: 0;
   }
 
@@ -300,7 +300,7 @@ body {
   }
 
   .app-title-band {
-    height: 108px;
+    height: auto;
   }
 }
 

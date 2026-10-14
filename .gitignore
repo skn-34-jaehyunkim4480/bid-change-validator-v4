@@ -53,3 +53,6 @@ artifacts/
 # Eval outputs
 eval/results/
 *.egg-info/
+
+# Django sidecar local audit database (never commit user QA metadata)
+apps/django_qa/*.sqlite3

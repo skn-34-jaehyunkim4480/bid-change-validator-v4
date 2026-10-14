@@ -1,0 +1,39 @@
+# Explicit opt-in overlay; NEVER part of default deploy/aws/docker-compose.yml.
+# docker compose -f docker-compose.yml -f docker-compose.django-qa.yml up -d --build django-qa caddy
+services:
+  django-qa:
+    image: ${DJANGO_QA_IMAGE:?Immutable Django image is required}
+    restart: unless-stopped
+    environment:
+      DJANGO_QA_PRODUCTION: 'true'
+      DJANGO_QA_SECRET_KEY: ${DJANGO_QA_SECRET_KEY:?Set a strong unique secret}
+      DJANGO_QA_ALLOWED_HOSTS: ${SITE_DOMAIN:?Site domain is required},127.0.0.1,localhost
+      DJANGO_QA_ALLOWED_ORIGINS: https://${SITE_DOMAIN:?Site domain is required}
+      DJANGO_QA_FASTAPI_URL: http://api:8000
+      DJANGO_QA_DB_PATH: /data/qa-audit.sqlite3
+    volumes:
+      - django_qa_data:/data
+    tmpfs:
+      - /tmp
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/internal/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  caddy:
+    depends_on:
+      django-qa:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile.django-qa:/etc/caddy/Caddyfile:ro
+
+volumes:
+  django_qa_data:

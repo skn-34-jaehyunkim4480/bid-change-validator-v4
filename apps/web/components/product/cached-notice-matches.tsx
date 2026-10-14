@@ -52,7 +52,7 @@ export function CachedNoticeMatches() {
   return (
     <section className="app-shell-container pt-10 pb-12">
       <div>
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div className="flex flex-col items-center gap-2 text-center">
           <h2 className="text-[28px] font-extrabold tracking-[-0.035em]">우리 회사의 판정 이력</h2>
           <span className="text-[13px] text-[var(--product-muted)]">판정한 공고·차수 {total}건</span>
         </div>

@@ -231,7 +231,7 @@ def test_aes_pdf_with_only_empty_pages_is_empty() -> None:
 
 def test_malformed_pdf_font_extraction_error_records_failure(monkeypatch) -> None:
     class BadPage:
-        def extract_text(self):
+        def extract_text(self, **_kwargs):
             raise KeyError("/DescendantFonts")
 
     class BadReader:
