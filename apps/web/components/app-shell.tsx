@@ -115,6 +115,15 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
+    match: (pathname) => pathname.startsWith('/prep-guide'),
+    page: {
+      title: '입찰 준비 지침서',
+      description: '판정을 마친 공고에 대해 준비할 것과 순서를 정리합니다.',
+      breadcrumb: '홈 › 준비 지침서',
+      showTitleBand: false,
+    },
+  },
+  {
     match: (pathname) => pathname.startsWith('/recommendations'),
     page: {
       title: 'AI 추천',
