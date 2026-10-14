@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore, type SyntheticEvent } from 'react';
 import { Building2, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 
+import { NavigationLink } from '@/components/navigation-link';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -135,6 +136,9 @@ export default function LoginPage() {
                   {loading ? <LoaderCircle className="animate-spin" /> : <LockKeyhole />}
                   {loading ? '로그인 중' : '로그인'}
                 </Button>
+                <p className="text-center text-sm text-[var(--product-muted)]">
+                  계정이 없나요? <NavigationLink href="/signup" className="font-semibold text-[var(--product-accent-deep)] underline">회원가입</NavigationLink>
+                </p>
               </form>
             </CardContent>
           </Card>
