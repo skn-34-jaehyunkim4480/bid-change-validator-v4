@@ -12,11 +12,40 @@ from typing import Any
 
 from bidengine.contracts import Evidence, QualificationRequirement
 
+# Real tenders use several score-table titles, including headings preceded by
+# form numbers or page markers. A title alone is insufficient: require tabular
+# score evidence *and* reject chunks containing an eligibility heading.
 _SCORING_HEAD = re.compile(
-    r"^\s*(?:\d+[.)]\s*)?(?:정량\s*평가\s*\(\s*\d+\s*점\s*\)|평가\s*항목\s*별\s*점수\s*기준)"
+    r"(?:정량\s*적?\s*평가\s*\(\s*\d+\s*점\s*\)"
+    r"|평가\s*항목\s*별\s*점수\s*기준"
+    r"|사업\s*수행\s*실적\s*평가\s*기준"
+    r"|적격\s*업체\s*선정\s*평가\s*표"
+    r"|주요\s*사업\s*수행\s*실적"
+    r"|제안서\s*평가\s*기준"
+    r"|평가\s*항목\s*및\s*배점"
+    r"|(?:사업\s*)?수행\s*실적\s*평가\s*기준)"
 )
+_SCORE_TABLE_MARKER = re.compile(
+    r"(?:배\s*점|평\s*점|점\s*수|평가\s*요소|평가\s*등급|등급\s*및\s*배점|\d+\s*점)"
+)
+
+
+def _is_scoring_only_chunk(content: str) -> bool:
+    # Header must be close to the start. Do not classify incidental mentions
+    # deep inside a long clause as a dedicated score table.
+    if not _SCORE_TABLE_MARKER.search(content) or _ELIGIBILITY_HEADING.search(content):
+        return False
+    # A reference to "evaluation table" inside a qualification paragraph is
+    # not the heading of that table. Match a short line prefix only.
+    for line in content[:350].splitlines():
+        matched = _SCORING_HEAD.search(line)
+        if matched is not None and len(line[:matched.start()].strip()) <= 35:
+            return True
+    return False
 _ELIGIBILITY_HEADING = re.compile(
-    r"(?:^|\n)\s*(?:\d+[.)]\s*)?(?:입찰\s*참가\s*자격|참가\s*자격\s*및\s*조건)"
+    # If even an incidental bidder-eligibility reference shares the chunk,
+    # do not risk converting a valid mandatory requirement into informational.
+    r"(?:입찰\s*참가\s*자격|참가\s*자격\s*및\s*조건)"
 )
 _SCORING_ONLY_TYPES = {"PERFORMANCE_AMOUNT", "PERFORMANCE_COUNT", "EXPERIENCE_FIELD"}
 
@@ -44,8 +73,7 @@ def guard_scoring_only_performance(
             updated.append(item)
             continue
         if not all(
-            _SCORING_HEAD.match(by_chunk[ref.chunk_id])
-            and not _ELIGIBILITY_HEADING.search(by_chunk[ref.chunk_id])
+            _is_scoring_only_chunk(by_chunk[ref.chunk_id])
             for ref in citations if ref is not None
         ):
             updated.append(item)

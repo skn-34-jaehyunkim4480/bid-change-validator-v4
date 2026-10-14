@@ -81,3 +81,83 @@ def test_shared_chunk_containing_eligibility_heading_is_not_auto_downgraded():
     output, diagnostics = guard_scoring_only_performance([q], [_evidence("score", "score")], chunks)
     assert output == [q]
     assert diagnostics == []
+
+
+def test_real_extracted_tender_score_variants():
+    # Frozen real G2B extraction blocks; these are NOT generated example texts.
+    # Each contains an explicit scored evaluation table with performance wording.
+    import json
+    import re
+    from pathlib import Path
+    from bidengine.document.chunking import chunk_source_blocks
+
+    golden_root = Path(__file__).resolve().parents[2] / "eval" / "golden"
+    cases = [
+        ("R26BK01739452", r"정량적\s*평가\s*\(20점\)"),
+        ("R26BK01736838", r"사업수행실적\s*평가기준\s*\(10점\)"),
+        ("R26BK01723179", r"주요사업\s*수행\s*실적"),
+        ("R26BK01741346", r"적격업체\s*선정\s*평가표"),
+        ("R26BK01675774", r"제안서\s*평가기준"),
+        ("R26BK01688607", r"평가항목\s*및\s*배점"),
+    ]
+    for number, heading in cases:
+        matched = []
+        for file in golden_root.rglob(f"*{number}*"):
+            if not file.is_dir():
+                continue
+            for blocks_file in file.glob("*.blocks.json"):
+                blocks = json.loads(blocks_file.read_text(encoding="utf-8-sig"))
+                for chunk in chunk_source_blocks(blocks, max_chars=1800):
+                    content = chunk["text"]
+                    match = re.search(heading, content)
+                    if (
+                        match
+                        and match.start() < 350
+                        and "실적" in content.replace(" ", "")
+                        and ("점" in content or "배점" in content)
+                        and "입찰참가자격" not in content.replace(" ", "")
+                    ):
+                        matched.append(content)
+        assert matched, f"No real source for {number}: {heading}"
+        assert any(
+            guard_scoring_only_performance(
+                [_requirement("q", "PERFORMANCE_AMOUNT", "실적", ["ev"])],
+                [_evidence("ev", "real")],
+                [{"chunk_id": "real", "text": content}],
+            )[0][0].requirement_role == "informational" for content in matched
+        ), f"Scored performance falsely remains mandatory: {number}"
+
+
+
+def test_real_extracted_overlap_does_not_downgrade_eligibility():
+    # Real school-uniform document: one large extracted page contains both a
+    # scoring table and a bidder-eligibility heading later in the same chunk.
+    import json
+    from pathlib import Path
+    from bidengine.document.chunking import chunk_source_blocks
+
+    root = Path(__file__).resolve().parents[2] / "eval" / "golden"
+    file = next(root.rglob("609509c84e6cd4f2.blocks.json"))
+    chunks = chunk_source_blocks(json.loads(file.read_text(encoding="utf-8-sig")), max_chars=1800)
+    score_chunks = [
+        c for c in chunks
+        if c["text"].startswith("- 22 -")
+        and "선정평가표" in c["text"].replace(" ", "")
+        and "입찰참가자격" in c["text"].replace(" ", "")
+    ]
+    assert score_chunks
+    q = _requirement("q", "PERFORMANCE_AMOUNT", "납품실적", ["ev"])
+    result, diagnostics = guard_scoring_only_performance(
+        [q], [_evidence("ev", "source")],
+        [{"chunk_id": "source", "text": score_chunks[0]["text"]}],
+    )
+    assert result == [q] and diagnostics == []
+
+
+def test_mentioning_score_table_inside_requirement_paragraph_is_not_a_heading():
+    from bidengine.pipeline.evaluation_role_guard import _is_scoring_only_chunk
+    statement = (
+        "라. 납품실적이 있는 업체만 참가할 수 있습니다. "
+        "학교주관구매 교복 적격업체 선정 평가표에 실적 배점이 있습니다."
+    )
+    assert not _is_scoring_only_chunk(statement)
