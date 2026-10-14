@@ -13,7 +13,7 @@ ALLOWED_HOSTS = os.getenv("DJANGO_QA_ALLOWED_HOSTS", "127.0.0.1,localhost,testse
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
-    "django.contrib.sessions", "django.contrib.messages", "qa_audit",
+    "django.contrib.sessions", "django.contrib.messages", "qa_audit", "notice_browse",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

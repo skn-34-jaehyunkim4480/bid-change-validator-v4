@@ -1,0 +1,42 @@
+{% extends "notice_browse/base.html" %}
+{% block content %}
+<h1>공고 조회</h1>
+<p class="lead">수집된 나라장터 공고를 공고번호·공고명·기관명으로 찾습니다.</p>
+<form class="search" method="get" action="/django/notices/">
+  <input type="search" name="q" value="{{ query }}" maxlength="200" placeholder="공고번호 · 공고명 · 기관명" aria-label="검색어">
+  <select name="business_type" aria-label="업무 구분">
+    <option value="">업무 구분 전체</option>
+    {% for value, label in business_types %}<option value="{{ value }}"{% if value == business_type %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit">검색</button>
+</form>
+<div class="card">
+  {% if items %}
+  <div class="scroll">
+    <table>
+      <thead><tr><th>공고번호</th><th>공고명</th><th>구분</th><th>수요기관</th><th>최근 수집</th></tr></thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="no">{{ item.bid_notice_no }}</td>
+          <td><a href="/django/notices/{{ item.id }}/?back={{ request.get_full_path|urlencode:'' }}">{{ item.title }}</a>{% if item.notice_kind %} <span class="tag">{{ item.notice_kind }}</span>{% endif %}</td>
+          <td><span class="tag">{{ item.business_label }}</span></td>
+          <td>{{ item.demanding_institution_name|default:"-" }}</td>
+          <td class="num">{{ item.last_seen|date:"Y.m.d H:i"|default:"-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">{% if query %}「{{ query }}」에 맞는 공고가 없습니다.{% else %}수집된 공고가 없습니다.{% endif %}</p>
+  {% endif %}
+  <nav class="pages" aria-label="쪽 이동">
+    <span>전체 {{ total }}건{% if items %} 중 {{ first_row }}–{{ last_row }}{% endif %} · {{ page }} / {{ last_page }}쪽</span>
+    <span>
+      {% if previous_page %}<a class="button quiet" href="?q={{ query|urlencode:'' }}&amp;business_type={{ business_type }}&amp;page={{ previous_page }}">이전</a>{% endif %}
+      {% if next_page %}<a class="button quiet" href="?q={{ query|urlencode:'' }}&amp;business_type={{ business_type }}&amp;page={{ next_page }}">다음</a>{% endif %}
+    </span>
+  </nav>
+</div>
+{% endblock %}

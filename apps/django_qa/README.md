@@ -42,3 +42,23 @@ Verify internal `/internal/health`, same-origin `/api/v1/django-qa/history`, POS
 - `POST /api/v1/django-qa/chat` accepts existing Copilot payload, with `case_id` UUID, `message`, explicit `public_document_question`, `allow_external_processing: true` and `response_version: legacy` or 3.1 (3.1 requires `free_chat: true`). Django returns the existing FastAPI Copilot response JSON and status unchanged.
 - `GET /api/v1/django-qa/history` returns only the current authenticated user's latest 30 audit metadata records.
 - Unauthorized access: 401; cross-site cookie request: 403; non-document/action request: 422. No fallback to fake model responses.
+
+## 공고 조회 화면 (`notice_browse`, 2026-10-14)
+
+Django 템플릿으로 그리는 읽기 전용 화면입니다. 기존 서비스 화면(React)은 그대로 두고 나란히 둡니다.
+
+- `GET /django/notices/` — 목록과 검색(`q`, `business_type`, `page`). 한 쪽에 20건입니다.
+- `GET /django/notices/<공고 UUID>/` — 상세(기관, 일정, 예산, 첨부 문서 목록, 나라장터 원문 링크).
+- 공고 자료의 주인은 FastAPI 입니다. Django 는 DB 를 직접 읽지 않고, 로그인 세션(`bidcheck_session`)을 그대로 넘겨 `/api/v1/notices` 를 불러 HTML 로 보여 줍니다. 로그인하지 않았으면 401 화면이 나옵니다.
+- 원문 링크는 `https://www.g2b.go.kr/` 주소일 때만 걸고, 목록으로 돌아가는 주소는 이 화면의 목록 주소일 때만 씁니다.
+
+로컬에서 보기(FastAPI 가 8001 에 떠 있을 때):
+
+```bash
+cd apps/django_qa
+DJANGO_QA_FASTAPI_URL=http://localhost:8001 python manage.py runserver 8002 --noreload
+# 서비스 화면(localhost:3000)에 로그인한 브라우저로 http://localhost:8002/django/notices/
+python manage.py test qa_audit notice_browse
+```
+
+AWS 에서는 선택 배포 묶음(`docker-compose.django-qa.yml` + `Caddyfile.django-qa`)을 올릴 때 `/django/*` 가 함께 열립니다. 기본 배포에는 들어 있지 않습니다.

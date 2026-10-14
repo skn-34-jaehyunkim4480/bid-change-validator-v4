@@ -6,6 +6,11 @@
         reverse_proxy django-qa:8001
     }
 
+    # Django 템플릿으로 그리는 공고 조회 화면(읽기 전용).
+    handle /django/* {
+        reverse_proxy django-qa:8001
+    }
+
     handle /api/* {
         reverse_proxy api:8000
     }

@@ -162,4 +162,4 @@ jobs:
           python manage.py makemigrations --check --dry-run
       - name: Django gateway tests
         working-directory: apps/django_qa
-        run: python manage.py test qa_audit --verbosity 1
+        run: python manage.py test qa_audit notice_browse --verbosity 1

@@ -1,0 +1,39 @@
+{% extends "notice_browse/base.html" %}
+{% block title %}{{ notice.title }}{% endblock %}
+{% block content %}
+<p><a href="{{ back }}">← 목록으로</a></p>
+<h1>{{ notice.title }}</h1>
+<p class="lead">{{ notice.bid_notice_no }} · <span class="tag">{{ business_label }}</span>{% if latest.notice_kind %} <span class="tag">{{ latest.notice_kind }}</span>{% endif %}</p>
+<div class="card">
+  <dl>
+    <dt>공고기관</dt><dd>{{ notice.announcing_institution_name|default:"-" }}</dd>
+    <dt>수요기관</dt><dd>{{ notice.demanding_institution_name|default:"-" }}</dd>
+    <dt>계약 방법</dt><dd>{{ latest.contract_method|default:"-" }}</dd>
+    <dt>게시</dt><dd>{{ dates.posted_at|date:"Y.m.d H:i"|default:"-" }}</dd>
+    <dt>입찰 시작</dt><dd>{{ dates.bid_started_at|date:"Y.m.d H:i"|default:"-" }}</dd>
+    <dt>입찰 마감</dt><dd>{{ dates.bid_closed_at|date:"Y.m.d H:i"|default:"-" }}</dd>
+    <dt>개찰</dt><dd>{{ dates.opened_at|date:"Y.m.d H:i"|default:"-" }}</dd>
+    <dt>배정 예산</dt><dd>{% if latest.allocated_budget %}{{ latest.allocated_budget|floatformat:"0g" }}원{% else %}-{% endif %}</dd>
+    <dt>추정 가격</dt><dd>{% if latest.estimated_price %}{{ latest.estimated_price|floatformat:"0g" }}원{% else %}-{% endif %}</dd>
+    <dt>차수</dt><dd>{{ latest.bid_notice_order }} (수집 {{ latest.version_number }}번째)</dd>
+    {% if latest.change_reason %}<dt>변경 사유</dt><dd>{{ latest.change_reason }}</dd>{% endif %}
+    <dt>나라장터 원문</dt><dd>{% if detail_url %}<a href="{{ detail_url }}" target="_blank" rel="noopener noreferrer">나라장터에서 보기</a>{% else %}-{% endif %}</dd>
+  </dl>
+</div>
+<h2>첨부 문서 {{ documents|length }}건</h2>
+<div class="card">
+  {% if documents %}
+  <div class="scroll">
+    <table>
+      <thead><tr><th>문서</th><th>내려받기</th><th>본문 추출</th><th>글자 수</th></tr></thead>
+      <tbody>
+        {% for doc in documents %}
+        <tr><td>{{ doc.name }}</td><td>{{ doc.download_status }}</td><td>{{ doc.extraction_status }}</td><td class="num">{{ doc.extracted_char_count|default_if_none:"-" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="empty">첨부 문서가 없습니다.</p>{% endif %}
+</div>
+<div class="actions"><a class="button" href="/notices?q={{ notice.bid_notice_no|urlencode:'' }}">서비스 화면에서 이 공고 찾기</a></div>
+{% endblock %}

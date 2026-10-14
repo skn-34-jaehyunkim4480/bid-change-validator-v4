@@ -1,0 +1,7 @@
+{% extends "notice_browse/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="lead">{{ message }}</p>
+<div class="actions"><a class="button" href="/login">로그인 화면으로</a> <a class="button quiet" href="/django/notices/">공고 조회 처음으로</a></div>
+{% endblock %}

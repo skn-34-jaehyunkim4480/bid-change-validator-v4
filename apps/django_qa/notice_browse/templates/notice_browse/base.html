@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}공고 조회{% endblock %} · 비드체크</title>
+  <style>
+    :root { --ink: #16203a; --muted: #5d6781; --line: #dfe4f0; --tint: #f3f5ff; --accent: #2b4fd8; --accent-deep: #1e3aa8; --bg: #f7f8fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
+    a { color: var(--accent-deep); }
+    header.top { background: #fff; border-bottom: 1px solid var(--line); }
+    header.top div { max-width: 1080px; margin: 0 auto; padding: 14px 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+    header.top strong { font-size: 18px; color: var(--accent-deep); }
+    header.top span { color: var(--muted); font-size: 13px; }
+    main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+    h1 { font-size: 26px; margin: 0 0 6px; text-wrap: balance; }
+    h2 { font-size: 18px; margin: 26px 0 10px; }
+    p.lead { color: var(--muted); margin: 0 0 20px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+    form.search { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    form.search input[type=search] { flex: 1 1 260px; min-width: 0; }
+    input, select, button { font: inherit; height: 42px; border-radius: 999px; border: 1px solid var(--line); padding: 0 16px; background: #fff; color: var(--ink); }
+    button, a.button { display: inline-flex; align-items: center; height: 42px; border-radius: 999px; padding: 0 18px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; text-decoration: none; }
+    button:hover, a.button:hover { background: var(--accent-deep); }
+    a.button.quiet, a.button.quiet:hover { background: #fff; color: var(--ink); border-color: var(--line); }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td.no, td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tag { display: inline-block; background: var(--tint); border-radius: 999px; padding: 1px 10px; font-size: 12.5px; white-space: nowrap; }
+    nav.pages { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-top: 16px; color: var(--muted); font-size: 14px; }
+    dl { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 8px 20px; margin: 0; }
+    dt { color: var(--muted); }
+    dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+    .empty { color: var(--muted); text-align: center; padding: 36px 0; margin: 0; }
+    .actions { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+    footer { color: var(--muted); font-size: 12.5px; margin-top: 26px; }
+  </style>
+</head>
+<body>
+  <header class="top"><div>
+    <strong>비드체크 공고 조회</strong>
+    <span>{% if user.username %}{{ user.username }} 님 · {% endif %}<a href="/notices">서비스 화면으로</a></span>
+  </div></header>
+  <main>
+    {% block content %}{% endblock %}
+    <footer>Django 템플릿으로 그린 읽기 전용 조회 화면입니다. 참가자격 판정은 서비스 화면에서 합니다.</footer>
+  </main>
+</body>
+</html>
