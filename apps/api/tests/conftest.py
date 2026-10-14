@@ -34,8 +34,9 @@ def seed_required_master_codes():
     required = [
         (IndustryCode, "0001", "토목공사업", True),
         (IndustryCode, "0002", "건축공사업", True),
-        (IndustryCode, "0003", "전기공사업", True),
-        (IndustryCode, "0004", "정보통신공사업", True),
+        (IndustryCode, "0003", "토목건축공사업", True),
+        (IndustryCode, "0036", "정보통신공사업", True),
+        (IndustryCode, "0037", "전기공사업", True),
         (ProductCode, "1010150201", "Golden 테스트 품목", True),
         (InstitutionCode, "1011052", "대통령실 경호처", False),
     ]
@@ -50,7 +51,7 @@ def seed_required_master_codes():
                     name=name,
                     active=active,
                     changed_at=None,
-                    source_window="pytest",
+                    source_window="official-fixture" if model is IndustryCode else "pytest",
                     collected_at=now,
                     raw_json={"source": "pytest"},
                 )
