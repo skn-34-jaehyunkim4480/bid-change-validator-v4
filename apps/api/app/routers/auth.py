@@ -14,7 +14,7 @@ from ..auth import (
     revoke_session,
 )
 from ..auth_models import AppUser, AuthSession
-from ..auth_schemas import AuthUserCreate, AuthUserRead, LoginRequest, LoginResponse
+from ..auth_schemas import AuthUserCreate, AuthUserRead, LoginRequest, LoginResponse, SignupRequest
 from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
@@ -34,15 +34,7 @@ def _user_response(user: AppUser) -> AuthUserRead:
     )
 
 
-@router.post("/login", response_model=LoginResponse)
-def login_user(
-    payload: LoginRequest,
-    response: Response,
-    db: Session = Depends(get_db),
-) -> LoginResponse:
-    raw_token, session = login(
-        db, username=payload.username, password=payload.password
-    )
+def _signed_in(response: Response, raw_token: str, session: AuthSession) -> LoginResponse:
     settings = get_settings()
     response.set_cookie(
         key="bidcheck_session",
@@ -58,6 +50,47 @@ def login_user(
         expires_at=session.expires_at,
         user=_user_response(session.user),
     )
+
+
+@router.post("/login", response_model=LoginResponse)
+def login_user(
+    payload: LoginRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> LoginResponse:
+    raw_token, session = login(
+        db, username=payload.username, password=payload.password
+    )
+    return _signed_in(response, raw_token, session)
+
+
+@router.post("/signup", response_model=LoginResponse, status_code=status.HTTP_201_CREATED)
+def signup_user(
+    payload: SignupRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> LoginResponse:
+    """누구나 계정을 만든다(2026-10-14). 회사 없는 무료 요금제 일반 사용자이고, 만든 뒤 바로 로그인된다.
+
+    회사는 첫 화면(회사 프로필)에서 직접 만들며, 그때 그 회사의 관리자가 된다. 다른 회사에 붙는 길은 없다.
+    """
+    if not get_settings().auth_signup_enabled:
+        raise ApiError(403, "SIGNUP_DISABLED", "지금은 회원가입을 받지 않습니다. 관리자에게 계정을 요청해 주세요.")
+    user = AppUser(
+        username=payload.username,
+        password_hash=hash_password(payload.password),
+        company_id=None,
+        role="USER",
+        active=True,
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise ApiError(409, "USERNAME_ALREADY_EXISTS", "이미 사용 중인 아이디입니다.") from error
+    raw_token, session = login(db, username=payload.username, password=payload.password)
+    return _signed_in(response, raw_token, session)
 
 
 @router.get("/me", response_model=AuthUserRead | None)

@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
     auth_cookie_secure: bool = False
     auth_required: bool = False
+    # 누구나 아이디·비밀번호로 계정을 만들 수 있게 한다(2026-10-14). 끄면 관리자가 만든 계정만 쓴다.
+    auth_signup_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

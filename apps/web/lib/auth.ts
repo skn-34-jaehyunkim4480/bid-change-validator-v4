@@ -47,6 +47,15 @@ export function login(username: string, password: string) {
   });
 }
 
+/** 회원가입. 성공하면 서버가 바로 로그인 세션을 준다. */
+export function signup(username: string, password: string) {
+  clearSharedData();
+  return authRequest<LoginResponse>('/api/v1/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+}
+
 export function getCurrentUser() {
   return authRequest<AuthUser | null>('/api/v1/auth/me');
 }

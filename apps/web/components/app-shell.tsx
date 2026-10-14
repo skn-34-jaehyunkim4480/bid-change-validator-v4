@@ -155,9 +155,11 @@ function pageInfoFor(pathname: string): PageInfo {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const page = pageInfoFor(pathname);
-  const isProtectedPage = pathname !== '/login';
+  // 로그인·회원가입 화면만 로그인 없이 연다.
+  const isPublicPage = pathname === '/login' || pathname === '/signup';
+  const isProtectedPage = !isPublicPage;
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
+  const [checkingAuth, setCheckingAuth] = useState(!isPublicPage);
   const [authFailure, setAuthFailure] = useState<string | null>(null);
   const [logoutFailure, setLogoutFailure] = useState<string | null>(null);
   const [authAttempt, setAuthAttempt] = useState(0);
@@ -214,7 +216,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [authAttempt, isProtectedPage]);
 
-  if (pathname === '/login') return children;
+  if (isPublicPage) return children;
 
   if (checkingAuth) {
     return (
