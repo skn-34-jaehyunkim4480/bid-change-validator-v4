@@ -1,4 +1,5 @@
 from datetime import date
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
@@ -91,11 +92,18 @@ def _load_certification(
 
 
 def _validate_industry_codes(db: Session, codes: list[str]) -> dict[str, IndustryCode]:
+    # The company picker must never accept Golden/pytest-only test identifiers
+    # as a legally registered G2B industry. Existing historical profile reads
+    # are intentionally unaffected.
+    if any(re.fullmatch(r"[0-9]{4}", code) is None for code in codes):
+        raise ApiError(422, "INVALID_INDUSTRY_CODE", "Official four-digit G2B industry codes are required.")
     industries = {
         industry.code: industry
         for industry in db.scalars(
             select(IndustryCode).where(
-                IndustryCode.code.in_(codes), IndustryCode.active.is_(True)
+                IndustryCode.code.in_(codes),
+                IndustryCode.active.is_(True),
+                (IndustryCode.source_window.is_(None) | (IndustryCode.source_window != "pytest")),
             )
         )
     }

@@ -151,6 +151,26 @@ def synthetic_industry_code(case_id: str, index: int) -> str:
     return f"GOLDEN-{case_id}-{index:02d}"
 
 
+# Exact matches confirmed against the live G2B industry master. Only the
+# shared-DB demo path canonicalizes these values, preserving standalone Golden
+# fixtures and unknown/ambiguous licensing cases (J09-12, J19, J23, J26).
+_SHARED_DB_CANONICAL_INDUSTRIES: dict[tuple[str, str], str] = {
+    ("J22", "국내외여행업"): "1262",
+    ("J24", "건설엔지니어링업(종합)"): "4966",
+}
+
+
+def golden_profile_industry_code(case_id: str, index: int, item: dict[str, Any], *, shared_db: bool) -> str:
+    supplied = str(item.get("code") or "").strip()
+    if supplied:
+        return supplied
+    if shared_db:
+        canonical = _SHARED_DB_CANONICAL_INDUSTRIES.get((case_id, str(item.get("name") or "").strip()))
+        if canonical:
+            return canonical
+    return synthetic_industry_code(case_id, index)
+
+
 def load_golden_bundle(bundle_dir: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     bundle_path = bundle_dir / "fixture_bundle.json"
     evidence_path = bundle_dir / "sources" / "evidence_all.json"
@@ -201,8 +221,20 @@ def _replace_company_profile(db: Session, case: dict[str, Any], *, shared_db: bo
 
     now = datetime.now(timezone.utc)
     for index, item in enumerate(profile.get("industries", []), start=1):
-        industry_code = str(item.get("code") or synthetic_industry_code(case_id, index))
+        industry_code = golden_profile_industry_code(case_id, index, item, shared_db=shared_db)
         industry = db.get(IndustryCode, industry_code)
+        if shared_db and industry_code in _SHARED_DB_CANONICAL_INDUSTRIES.values():
+            if industry is None or not industry.active:
+                raise ValueError(f"Golden {case_id} requires the active official master code {industry_code}")
+        if (
+            shared_db
+            and industry is not None
+            and industry_code.startswith("GOLDEN-")
+            and industry.source_window == "golden-v0.2"
+        ):
+            # Earlier shared seeds mistakenly left synthetic masters active.
+            # Keep their FK history intact but stop exposing them to all users.
+            industry.active = False
         if industry is None:
             industry = IndustryCode(
                 code=industry_code,
