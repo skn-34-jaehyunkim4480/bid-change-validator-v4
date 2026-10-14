@@ -7,7 +7,7 @@ const documentRequest: QaRoutingInput = {
   responseVersion: 'legacy', intent: 'DOCUMENT_QA', hasAction: false,
 };
 
-test('only explicitly enabled document processing is routed through Django', () => {
+void test('only explicitly enabled document processing is routed through Django', () => {
   assert.equal(copilotChatPath(documentRequest, true), '/api/v1/django-qa/chat');
   assert.equal(copilotChatPath(documentRequest, false), '/api/v1/copilot/chat');
   assert.equal(copilotChatPath({ ...documentRequest, documentProcessing: false }, true), '/api/v1/copilot/chat');
@@ -15,7 +15,7 @@ test('only explicitly enabled document processing is routed through Django', () 
   assert.equal(copilotChatPath({ ...documentRequest, semanticProcessing: true, responseVersion: '3.1' }, true), '/api/v1/django-qa/chat');
 });
 
-test('general, guided and action requests never enter Django', () => {
+void test('general, guided and action requests never enter Django', () => {
   for (const override of [
     { general: true }, { hasAction: true }, { intent: 'ACTION_REQUEST' },
   ]) {
