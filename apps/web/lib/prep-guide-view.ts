@@ -35,6 +35,37 @@ export type PrepGuide = {
   documents_read: string[];
 };
 
+/** Compute scoring from extracted hierarchy, including old browser-cached guides. */
+export function evaluationTotalPoints(items: GuideEvaluationItem[]): number | null {
+  if (!items.length) return null;
+  const techParents = new Set(['기술능력평가', '기술평가', '기술제안서평가', '기술제안평가']);
+  const priceParents = new Set(['가격평가', '입찰가격평가', '가격능력평가']);
+  const tech: GuideEvaluationItem[] = [];
+  const price: GuideEvaluationItem[] = [];
+  const other: GuideEvaluationItem[] = [];
+  for (const item of items) {
+    const name = item.name.replace(/\s+/g, '');
+    if (techParents.has(name) || item.kind === '기술') tech.push(item);
+    else if (priceParents.has(name) || item.kind === '가격') price.push(item);
+    else other.push(item);
+  }
+  function categoryPoints(rows: GuideEvaluationItem[], parents: Set<string>): { total: number | null; parent: boolean } {
+    if (!rows.length) return { total: 0, parent: false };
+    const roots = rows.filter((item) => parents.has(item.name.replace(/\s+/g, '')));
+    if (roots.length > 1) return { total: null, parent: false };
+    const effective = roots.length ? roots : rows;
+    if (effective.some((item) => item.points == null || !Number.isFinite(item.points) || item.points <= 0))
+      return { total: null, parent: false };
+    return { total: effective.reduce((sum, item) => sum + (item.points ?? 0), 0), parent: roots.length > 0 };
+  }
+  const technical = categoryPoints(tech, techParents);
+  const prices = categoryPoints(price, priceParents);
+  if (technical.total == null || prices.total == null) return null;
+  if (technical.parent && price.length) return technical.total + prices.total;
+  const extras = categoryPoints(other, new Set());
+  return extras.total == null ? null : technical.total + prices.total + extras.total;
+}
+
 /** 준비 자료가 회사 프로필에 이미 있는 것인지. 연결된 프로필 항목이 있으면 '프로필에 있음' 이다. */
 export function materialCounts(guide: PrepGuide) {
   const materials = guide.evaluation_items.flatMap((item) => item.materials);
