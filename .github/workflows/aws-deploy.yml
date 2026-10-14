@@ -120,7 +120,7 @@ jobs:
         if: steps.target.outputs.current == 'true'
         run: |
           if ! aws ecr describe-images --repository-name bidcheck-v4-web --image-ids imageTag="$DEPLOY_SHA" >/dev/null 2>&1; then
-            docker build -f apps/web/Dockerfile.aws --build-arg NEXT_PUBLIC_API_BASE_URL="$SITE_ORIGIN" \
+            docker build -f apps/web/Dockerfile.aws --build-arg NEXT_PUBLIC_API_BASE_URL="$SITE_ORIGIN" --build-arg NEXT_PUBLIC_DJANGO_QA_ENABLED=true \
               -t "$REGISTRY/bidcheck-v4-web:$DEPLOY_SHA" .
             docker push "$REGISTRY/bidcheck-v4-web:$DEPLOY_SHA"
           fi
