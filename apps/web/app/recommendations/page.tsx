@@ -138,13 +138,13 @@ export default function RecommendationsPage() {
   return (
     <main className="app-shell-container min-w-0 py-8 pb-20 sm:py-12">
       <section className="product-hero" aria-labelledby="recommendations-page-title">
-        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col items-center gap-5 text-center">
           <div>
             <p className="text-xs font-medium text-white/75">홈 › AI 추천</p>
             <h1 id="recommendations-page-title" className="mt-2 text-[28px] font-extrabold tracking-[-0.035em]">
               AI 추천
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6">
+            <p className="mx-auto mt-2 max-w-2xl text-sm leading-6">
               우리 회사에 어울리는 입찰 공고를 찾아드립니다. 관심 있는 공고는 참가자격도 확인해 보세요.
             </p>
           </div>

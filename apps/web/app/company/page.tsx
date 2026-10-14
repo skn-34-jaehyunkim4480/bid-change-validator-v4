@@ -534,11 +534,11 @@ export default function CompanyPage() {
         ) : (
           <>
             <section className="product-hero">
-              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+              <div className="flex flex-col items-center gap-4 text-center">
                 <div>
                   <h1 className="text-[28px] font-extrabold tracking-[-0.035em]">프로필 항목 {filledRows}/{rows.length} 완료</h1>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   <Badge variant="outline">{company.name}</Badge>
                   <Button variant="outline" size="sm" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} />새로고침</Button>
                   <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)} disabled={busy !== null}><RotateCcw />프로필 초기화</Button>
