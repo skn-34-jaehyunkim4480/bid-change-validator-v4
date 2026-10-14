@@ -89,6 +89,23 @@ test('usage guide lives at the bottom of the notice page and the guide tab is go
   const guide = page.locator('#usage-guide');
   await expect(guide.getByRole('heading', { name: '이용 안내', level: 2 })).toBeVisible();
   await expect(guide.locator('ol > li')).toHaveCount(3);
+  // Align these four legend pills with the 168px labels in the section above.
+  const legendBadges = guide.locator('dl.mt-5.space-y-4 dt > span');
+  await expect(legendBadges).toHaveCount(4);
+  const badgeSizes = await legendBadges.evaluateAll((elements) =>
+    elements.map((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        width: bounds.width,
+        height: bounds.height,
+        nowrap: getComputedStyle(element).whiteSpace === 'nowrap',
+        overflow: element.scrollWidth > element.clientWidth,
+      };
+    }));
+  expect(badgeSizes).toEqual(Array(4).fill({ width: 168, height: 40, nowrap: true, overflow: false }));
+  const aboveDescription = guide.locator('dl.mt-3.space-y-3 dd').first();
+  const legendDescription = guide.locator('dl.mt-5.space-y-4 dd').first();
+  expect((await aboveDescription.boundingBox())?.x).toBe((await legendDescription.boundingBox())?.x);
   await expect(guide.getByRole('heading', { name: '이 서비스가 하지 않는 것' })).toBeVisible();
   // 이용안내 탭은 없다. 예전 주소로 들어가면 찾을 수 없는 화면이다.
   await expect(page.locator('nav.app-primary-nav a[href="/guide"]')).toHaveCount(0);

@@ -140,9 +140,9 @@ export function UsageGuide() {
         <h3 className="text-[21px] font-extrabold leading-[1.4] tracking-[-0.03em] text-[var(--product-ink)]">공고 목록의 판정 표시</h3>
         <dl className="mt-5 space-y-4">
           {BADGES.map(({ key, icon: Icon, body }) => (
-            <div key={key} className="grid gap-x-5 gap-y-1.5 sm:grid-cols-[136px_minmax(0,1fr)] sm:items-baseline">
+            <div key={key} className="grid gap-x-5 gap-y-1.5 sm:grid-cols-[168px_minmax(0,1fr)] sm:items-center">
               <dt>
-                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-bold leading-[1.7] ${OVERALL_STATUS_BADGE[key].className}`}><Icon className="size-4" />{OVERALL_STATUS_BADGE[key].label}</span>
+                <span className={`inline-flex h-10 w-[168px] max-w-full items-center gap-2 whitespace-nowrap rounded-full border px-4 text-[13px] font-bold ${OVERALL_STATUS_BADGE[key].className}`}><Icon className="size-4 shrink-0" />{OVERALL_STATUS_BADGE[key].label}</span>
               </dt>
               <dd className="max-w-[58ch] text-[15px] leading-[1.75] text-[var(--product-muted)]">{body}</dd>
             </div>
