@@ -9,7 +9,7 @@ services:
     environment:
       DJANGO_QA_PRODUCTION: 'true'
       DJANGO_QA_SECRET_KEY: ${DJANGO_QA_SECRET_KEY:?Set a strong unique secret}
-      DJANGO_QA_ALLOWED_HOSTS: ${SITE_DOMAIN:?Site domain is required}
+      DJANGO_QA_ALLOWED_HOSTS: ${SITE_DOMAIN:?Site domain is required},127.0.0.1,localhost
       DJANGO_QA_ALLOWED_ORIGINS: https://${SITE_DOMAIN:?Site domain is required}
       DJANGO_QA_FASTAPI_URL: http://api:8000
       DJANGO_QA_DB_PATH: /data/qa-audit.sqlite3
