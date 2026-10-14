@@ -379,8 +379,16 @@ def update_company(
     if "industry_codes" in supplied:
         if payload.industry_codes is None:
             raise ApiError(422, "INVALID_REQUEST", "industry_codes cannot be null")
-        industries = _validate_industry_codes(db, payload.industry_codes)
         existing = {item.industry_code: item for item in company.industries}
+        # A historical Golden profile can still carry a synthetic code from
+        # the shared v0.2 fixtures. Retain unchanged links for existing profile
+        # edits, but validate EVERY newly added code against the official picker.
+        # This prevents unrelated profile edits from failing after hiding test
+        # masters and never allows a user to newly register GOLDEN-/pytest IDs.
+        newly_added_codes = [
+            code for code in payload.industry_codes if code not in existing
+        ]
+        industries = _validate_industry_codes(db, newly_added_codes)
         company.industries = [
             existing.get(code)
             or CompanyIndustry(industry_code=code, industry=industries[code])

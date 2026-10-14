@@ -157,3 +157,41 @@ def test_legacy_repair_is_atomic_and_preserves_evidence_flags():
         finally:
             # None of the simulated changes reach the shared test DB.
             db.rollback()
+
+
+def test_existing_synthetic_industry_is_retained_when_editing_profile():
+    from uuid import UUID
+    from sqlalchemy import select
+    from apps.api.app.models import Company, CompanyIndustry
+    from apps.api.app.routers.companies import update_company
+    from apps.api.app.schemas import CompanyUpdate
+    from datetime import datetime,timezone
+    from pathlib import Path
+    import json
+    golden = json.loads(Path("eval/golden/qualification-v0.2/fixture_bundle.json").read_text(encoding="utf-8"))
+    demo = next(x for x in golden["cases"] if x["case_id"]=="J09")
+    cid = UUID(demo["profile"]["company_id"])
+    code="GOLDEN-J09-01"
+    with SessionLocal() as db:
+        try:
+            db.add(IndustryCode(code=code,name=demo["profile"]["industries"][0]["name"],
+                                active=False,source_window="golden-v0.2",
+                                collected_at=datetime.now(timezone.utc),
+                                raw_json={"source":"golden-v0.2"}))
+            db.flush()
+            db.add(Company(id=cid,name=demo["profile_name"],company_size="SMALL"))
+            db.flush()
+            db.add(CompanyIndustry(company_id=cid,industry_code=code,verified=False))
+            db.flush()
+            # Real UI PATCH body contains both industry_codes and other fields.
+            saved=update_company(cid,CompanyUpdate(industry_codes=[code],
+                               region_name="?????"),db=db,user=None)
+            assert saved is not None
+            db.flush()
+            assert {item.industry_code for item in db.get(Company,cid).industries}=={code}
+            assert db.get(IndustryCode,code).active is False
+            # A different phantom code cannot be added during the same update.
+            with pytest.raises(ApiError):
+                update_company(cid,CompanyUpdate(industry_codes=[code,"GOLDEN-J22-01"]),db=db,user=None)
+        finally:
+            db.rollback()
