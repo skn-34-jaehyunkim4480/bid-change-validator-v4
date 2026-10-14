@@ -1,0 +1,9 @@
+*
+!apps
+!apps/django_qa
+!apps/django_qa/**
+apps/django_qa/.venv
+apps/django_qa/.venv/**
+**/__pycache__
+**/*.py[cod]
+**/*.sqlite3
