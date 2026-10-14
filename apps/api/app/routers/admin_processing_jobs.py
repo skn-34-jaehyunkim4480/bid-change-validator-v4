@@ -16,6 +16,7 @@ from ..database import get_db
 from ..errors import ApiError
 from ..models import NoticeProcessingAttempt, NoticeProcessingJob
 from ..services.notice_processing import enqueue_version_job, load_version, MAX_ATTEMPTS
+from ..qualification.document_readiness import qualification_documents
 
 
 router = APIRouter(prefix="/api/v1/admin/processing-jobs", tags=["admin processing jobs"])
@@ -111,8 +112,7 @@ def approve_analysis(
     version = load_version(db, version_id, lock=True)
     if version is None:
         raise ApiError(404, "NOTICE_VERSION_NOT_FOUND", "공고 차수를 찾을 수 없습니다.")
-    if not version.documents or any(doc.download_status != "DOWNLOADED" or doc.extraction_status != "EXTRACTED"
-                                    for doc in version.documents):
+    if not qualification_documents(version.documents).ready:
         raise ApiError(409, "DOCUMENTS_NOT_READY", "모든 첨부의 다운로드·추출 완료 후 승인할 수 있습니다.")
     enqueue_version_job(db, version_id=version_id, stage="INDEX", approved_by_id=user.id)
     job = enqueue_version_job(db, version_id=version_id, stage="ANALYZE", approved_by_id=user.id)
