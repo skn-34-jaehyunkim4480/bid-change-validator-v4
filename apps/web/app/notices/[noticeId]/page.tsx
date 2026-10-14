@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { DocumentViewer } from '@/components/document-viewer';
 import { NavigationLink } from '@/components/navigation-link';
 import { Button } from '@/components/ui/button';
+import { judgmentHref } from '@/lib/open-judgment';
+import { hasNoticeChangeVersion, type CaseDestination } from '@/lib/notice-detail-navigation';
 import { getNotice, getNoticeVersions, type BidNoticeDetail, type BidNoticeVersion } from '@/lib/api';
 
 type DetailState = { loading: boolean; error: string; notice: BidNoticeDetail | null; versions: BidNoticeVersion[] };
@@ -13,10 +15,13 @@ const EMPTY: DetailState = { loading: true, error: '', notice: null, versions: [
 export default function NoticeDetailPage() {
   const params = useParams<{ noticeId: string }>();
   const noticeId = params.noticeId;
+  const router = useRouter();
   const [state, setState] = useState<DetailState>(EMPTY);
   const [requestedVersion, setRequestedVersion] = useState<number | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [opening, setOpening] = useState<CaseDestination | null>(null);
+  const [navigationError, setNavigationError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -30,6 +35,24 @@ export default function NoticeDetailPage() {
     return () => { active = false; };
   }, [noticeId, attempt]);
 
+  async function openCase(destination: CaseDestination) {
+    if (opening || !state.notice) return;
+    setNavigationError('');
+    setOpening(destination);
+    try {
+      const href = await judgmentHref(noticeId, {
+        bidNoticeNo: state.notice.bid_notice_no,
+        destination,
+      });
+      router.push(href);
+    } catch (cause) {
+      setNavigationError(cause instanceof Error ? cause.message : '검토 건을 열지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  const hasChanges = hasNoticeChangeVersion(state.versions);
   const selectedVersion = state.versions.find((version) => version.version_number === requestedVersion)
     ?? state.versions.find((version) => version.is_current)
     ?? state.notice?.latest ?? null;
@@ -58,9 +81,18 @@ export default function NoticeDetailPage() {
               <div><dt className="text-slate-500">입찰 마감</dt><dd className="font-medium">{state.notice.latest.bid_closed_at ?? '미확인'}</dd></div>
             </dl>
             <div className="mt-5 flex flex-wrap gap-4">
-              <NavigationLink href="/qualification" className="font-semibold text-blue-700 underline">참가자격 검토 열기</NavigationLink>
-              <NavigationLink href="/changes" className="font-semibold text-blue-700 underline">변경공고 확인</NavigationLink>
+              <Button type="button" variant="link" className="h-auto p-0 font-semibold text-blue-700 underline" disabled={opening !== null} onClick={() => void openCase('qualification')}>
+                {opening === 'qualification' ? '검토 건 여는 중…' : '참가자격 검토 열기'}
+              </Button>
+              {hasChanges ? (
+                <Button type="button" variant="link" className="h-auto p-0 font-semibold text-blue-700 underline" disabled={opening !== null} onClick={() => void openCase('changes')}>
+                  {opening === 'changes' ? '변경공고 확인 중…' : '변경공고 확인'}
+                </Button>
+              ) : (
+                <span className="text-sm text-slate-500" title="최초 공고 1개 버전만 등록되어 있습니다.">변경 이력 없음 (최초 공고)</span>
+              )}
             </div>
+            {navigationError && <p role="alert" className="mt-3 text-sm text-red-700">{navigationError}</p>}
           </section>
           <section className="mt-6 rounded-2xl border bg-white p-5 sm:p-7" aria-labelledby="source-title">
             <h2 id="source-title" className="text-xl font-bold">버전별 첨부 원문</h2>

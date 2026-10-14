@@ -1,3 +1,4 @@
+import { caseDestinationHref, type CaseDestination } from './notice-detail-navigation';
 import { findPreflightCasesByNotice, getNoticeVersions } from './api';
 import { createPreflightCaseWithCompany, listCompanies } from './qualification-api';
 
@@ -10,7 +11,7 @@ import { createPreflightCaseWithCompany, listCompanies } from './qualification-a
 /** 판정 화면을 열자마자 검토를 시작하게 하는 표시. app/qualification/page.tsx 가 읽고 지운다. */
 export const AUTOSTART_PARAM = 'autostart';
 
-export async function judgmentHref(noticeId: string, options: { bidNoticeNo?: string; autostart?: boolean } = {}): Promise<string> {
+export async function judgmentHref(noticeId: string, options: { bidNoticeNo?: string; autostart?: boolean; destination?: CaseDestination } = {}): Promise<string> {
   const company = (await listCompanies())[0];
   if (!company) throw new Error('회사 프로필이 필요합니다. 회사 프로필을 먼저 만들어 주세요.');
   const versions = await getNoticeVersions(noticeId);
@@ -31,5 +32,5 @@ export async function judgmentHref(noticeId: string, options: { bidNoticeNo?: st
     });
     caseId = created.id;
   }
-  return `/qualification?caseId=${encodeURIComponent(caseId)}${options.autostart ? `&${AUTOSTART_PARAM}=1` : ''}`;
+  return caseDestinationHref(caseId, options.destination) + (options.destination !== 'changes' && options.autostart ? '&' + AUTOSTART_PARAM + '=1' : '');
 }
