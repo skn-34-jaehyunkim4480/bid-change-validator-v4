@@ -170,6 +170,65 @@ def _points(value: Any) -> float | int | None:
     return int(value) if float(value).is_integer() else round(float(value), 2)
 
 
+# Parents and their children both occur in extracted scoring tables. Summing them
+# together double-counts technical evaluation (J22: 90 + 45 + 10 = 145).
+_TECH_PARENT_NAMES = {
+    "기술능력평가", "기술평가", "기술제안서평가", "기술제안평가",
+}
+_PRICE_PARENT_NAMES = {
+    "가격평가", "입찰가격평가", "가격능력평가",
+}
+
+
+def evaluation_total_points(items: list[dict[str, Any]]) -> float | int | None:
+    """Use category totals instead of summing a category total with its children.
+
+    If a category's hierarchy is ambiguous, omit the total rather than
+    claiming that a partial or double-counted sum is the evaluation total.
+    """
+    if not items:
+        return None
+    tech, price, other = [], [], []
+    for item in items:
+        category = str(item.get("kind") or "").strip()
+        name = _squash(str(item.get("name") or ""))
+        if name in _TECH_PARENT_NAMES or category == "기술":
+            tech.append(item)
+        elif name in _PRICE_PARENT_NAMES or category == "가격":
+            price.append(item)
+        else:
+            other.append(item)
+
+    def category_points(rows: list[dict[str, Any]], parent_names: set[str]):
+        if not rows:
+            return 0, False
+        parent = [row for row in rows if _squash(str(row.get("name") or "")) in parent_names]
+        if len(parent) > 1:
+            return None, False
+        # A category total is authoritative within that category, not additive.
+        effective = parent if parent else rows
+        numbers = [row.get("points") for row in effective]
+        if any(not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0 for v in numbers):
+            return None, False
+        return sum(numbers), bool(parent)
+
+    technical, technical_parent = category_points(tech, _TECH_PARENT_NAMES)
+    prices, price_parent = category_points(price, _PRICE_PARENT_NAMES)
+    if technical is None or prices is None:
+        return None
+    # A verified technical-category parent plus an explicit price category
+    # already spans the scoring table. Unknown "other" child items (common
+    # in extraction) must not erase or inflate that authoritative total.
+    if technical_parent and price:
+        total = technical + prices
+    else:
+        extras, _ = category_points(other, set())
+        if extras is None:
+            return None
+        total = technical + prices + extras
+    return int(total) if float(total).is_integer() and total > 0 else round(total, 2) if total > 0 else None
+
+
 def grounded_rows(source: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """인용문이 문서에 실제로 있는 항목만 남긴다(띄어쓰기는 보지 않는다)."""
     flat = _squash(source)
@@ -275,7 +334,7 @@ def build_guide(*, notice: BidNotice, version: BidNoticeVersion, docs: list[tupl
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "schedule": _schedule(version, kept["dated_events"]),
         "evaluation_items": evaluation,
-        "total_points": sum(row["points"] or 0 for row in evaluation) or None,
+        "total_points": evaluation_total_points(evaluation),
         "submission_documents": [{"text": _text(row.get("text")), "quote": _text(row.get("quote"), 200)} for row in kept["submission_documents"] if _text(row.get("text"))],
         "format_rules": [{"text": _text(row.get("text")), "quote": _text(row.get("quote"), 200)} for row in kept["format_rules"] if _text(row.get("text"))],
         "steps": steps,

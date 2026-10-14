@@ -196,6 +196,22 @@ def _as_date(value: str | None) -> date | None:
     return date.fromisoformat(value) if value else None
 
 
+def _shared_demo_completeness(case_id: str, profile: dict[str, Any], *, shared_db: bool) -> dict[str, bool]:
+    """Shared J22 presentation has no registered performance/certification data.
+
+    The Golden reference fixture deliberately represents an evaluated synthetic
+    closed-world profile. Preserve it unchanged in standalone Golden scoring,
+    but do not turn absence of submitted data into proven nonqualification in
+    the interactive shared-db demonstration.
+    """
+    flags = dict(profile.get("completeness") or {})
+    if shared_db and case_id == "J22":
+        for field in ("performances", "certifications"):
+            if not profile.get(field):
+                flags[field] = False
+    return flags
+
+
 def _replace_company_profile(db: Session, case: dict[str, Any], *, shared_db: bool = False) -> Company:
     case_id = case["case_id"]
     profile = case["profile"]
@@ -312,7 +328,7 @@ def _replace_company_profile(db: Session, case: dict[str, Any], *, shared_db: bo
             )
         )
 
-    completeness = profile.get("completeness", {})
+    completeness = _shared_demo_completeness(case_id, profile, shared_db=shared_db)
     record = db.get(CompanyQualificationProfileCompleteness, company_id)
     if record is None:
         record = CompanyQualificationProfileCompleteness(company_id=company_id)
