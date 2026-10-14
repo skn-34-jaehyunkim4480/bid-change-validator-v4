@@ -19,6 +19,7 @@ const PRIMARY_NAV = [
   { label: '회사 프로필', href: '/company' },
   { label: 'AI 추천', href: '/recommendations' },
   { label: 'AI Copilot', href: '/copilot' },
+  { label: '준비 지침서', href: '/prep-guide' },
 ] as const;
 
 function isActive(pathname: string, href: string) {
